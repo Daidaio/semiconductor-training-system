@@ -140,10 +140,10 @@
 ### 環境需求
 
 - Python 3.8+
-- 8GB+ RAM
+- 8GB+ RAM（使用本地 LLM 建議 16GB）
 - Pandas, NumPy, Gradio
 
-### 本地安裝
+### 快速開始
 
 ```bash
 # 1. Clone 專案
@@ -153,16 +153,62 @@ cd semiconductor_training_system
 # 2. 安裝套件
 pip install -r requirements.txt
 
-# 3. 準備資料
-# 下載 SECOM 資料集並放置到專案根目錄
-# 檔案名稱: uci-secom.csv
+# 3. 啟動統一訓練系統
+python start_unified.py
+```
 
-# 4. 執行測試
+打開瀏覽器訪問：**http://127.0.0.1:7860**
+
+### AI 模式選擇
+
+系統支援三種 AI 模式（自動選擇最佳可用模式）：
+
+#### 🌟 模式 1: 本地 LLM（推薦）
+
+**優點**：免費、離線、隱私
+
+```bash
+# 1. 安裝 Ollama
+# Windows: https://ollama.com/download/windows
+# Mac: brew install ollama
+# Linux: curl -fsSL https://ollama.com/install.sh | sh
+
+# 2. 下載 Qwen 模型（推薦，中文超強）
+ollama pull qwen2.5:7b
+
+# 3. 啟動系統（會自動偵測 Ollama）
+python start_unified.py
+```
+
+**詳細指南**：[LOCAL_LLM_GUIDE.md](LOCAL_LLM_GUIDE.md)
+
+#### ☁️ 模式 2: Claude API
+
+**優點**：品質最佳、回應快速
+
+```bash
+# 設置 API Key
+export ANTHROPIC_API_KEY="your-api-key"
+
+# 啟動系統
+python start_unified.py
+```
+
+**詳細指南**：[AI_INTEGRATION_GUIDE.md](AI_INTEGRATION_GUIDE.md)
+
+#### ⚡ 模式 3: Mock 模式（預設）
+
+無需任何設置，直接運行即可（簡單關鍵詞匹配）
+
+### 舊版本（階段 2 實作訓練）
+
+```bash
+# 執行測試
 python core/digital_twin.py
 python core/a2a_coordinator.py
 python core/scenario_generator.py
 
-# 5. 啟動 Gradio 介面
+# 啟動舊版介面
 cd interface
 python gradio_app.py
 ```
@@ -177,7 +223,47 @@ python gradio_app.py
 
 ## 📘 使用說明
 
-### 訓練流程
+### 統一訓練系統（整合版）
+
+#### 系統特色
+
+✅ **三階段訓練體系**
+```
+階段 1: 理論學習 → 階段 2: 虛擬實作 → 階段 3: 真機實習
+   (70分及格)        (80分及格)         (產線實習)
+```
+
+✅ **AI 學長 BOT**
+- 支援本地 LLM / Claude API / Mock 三種模式
+- 反問機制確認理解
+- 自然學長風格對話
+
+✅ **智能推薦系統**
+- 自動偵測知識盲點
+- 推薦複習主題
+- 生成個性化學習路徑
+
+✅ **綜合評分系統**
+- 理論測驗評分
+- 實作操作評分
+- 詳細分析報告
+
+#### 使用流程
+
+1. **登入** - 輸入學員 ID 和姓名
+2. **階段 1** - 與 AI 學長學習理論，參加測驗（需 70 分）
+3. **階段 2** - 虛擬實作訓練（需 80 分）
+4. **報告** - 查看學習報告和改進建議
+
+**詳細文檔**：
+- [整合指南](INTEGRATION_GUIDE.md)
+- [整合完成報告](INTEGRATION_COMPLETED.md)
+- [本地 LLM 指南](LOCAL_LLM_GUIDE.md)
+- [AI 整合指南](AI_INTEGRATION_GUIDE.md)
+
+---
+
+### 舊版訓練流程（僅階段 2）
 
 #### 步驟 1: 開始訓練
 1. 輸入學員 ID（例如：STU001）

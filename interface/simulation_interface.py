@@ -16,13 +16,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.scenario_engine import ScenarioEngine
 from core.natural_language_controller import NaturalLanguageController, ActionExecutor
 from core.ai_expert_advisor import AIExpertAdvisor
+from core.ai_scenario_mentor import AIScenarioMentor
 from core.digital_twin import LithographyDigitalTwin
+import os
 
 
 class SimulationTrainingSystem:
     """情境模擬訓練系統"""
 
-    def __init__(self, secom_data_path: str):
+    def __init__(self, secom_data_path: str, use_ai_mentor: bool = True):
         """初始化系統"""
         print("[Init] Simulation training system...")
 
@@ -31,7 +33,17 @@ class SimulationTrainingSystem:
         self.digital_twin = LithographyDigitalTwin(secom_data_path)
         self.nlu_controller = NaturalLanguageController()
         self.action_executor = ActionExecutor(self.digital_twin)
-        self.ai_advisor = AIExpertAdvisor()
+
+        # AI 系統：使用新的 AI 情境學長（優先）或舊的 AI 專家顧問
+        self.use_ai_mentor = use_ai_mentor
+        if use_ai_mentor:
+            self.ai_mentor = AIScenarioMentor(use_ai=True)
+            self.ai_advisor = None  # 不使用舊版
+            print("[OK] 使用 AI 情境學長模式")
+        else:
+            self.ai_advisor = AIExpertAdvisor()
+            self.ai_mentor = None
+            print("[OK] 使用傳統專家顧問模式")
 
         # 系統狀態
         self.current_scenario = None
@@ -40,14 +52,20 @@ class SimulationTrainingSystem:
         self.last_update_time = None
         self.auto_progression_enabled = True
 
+        # 對話歷史（用於 Chatbot 組件）
+        self.conversation_history = []
+
+        # 設備狀態檢查結果（用於顯示實體部件狀態）
+        self.equipment_status = {}
+
         print("[OK] System ready!")
 
-    def start_new_scenario(self, difficulty: str = "medium") -> Tuple[str, str, str, str]:
+    def start_new_scenario(self, difficulty: str = "medium") -> Tuple[str, str, str, list, str]:
         """
         開始新情境
 
         Returns:
-            (equipment_html, dashboard_html, system_message, action_log)
+            (equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log)
         """
         # 初始化新情境
         scenario_info = self.scenario_engine.initialize_scenario(
@@ -59,7 +77,17 @@ class SimulationTrainingSystem:
         self.session_active = True
         self.action_history = []
         self.last_update_time = datetime.now()
-        self.ai_advisor.reset()
+
+        # 重置對話歷史和設備狀態
+        self.conversation_history = []
+        self.equipment_status = {}
+
+        # 重置 AI 系統並設定情境上下文
+        if self.use_ai_mentor:
+            self.ai_mentor.reset()
+            self.ai_mentor.set_scenario_context(self.scenario_engine.get_scenario_info())
+        else:
+            self.ai_advisor.reset()
 
         # 生成警報訊息
         alarm_message = scenario_info["alarm_message"]
@@ -67,47 +95,88 @@ class SimulationTrainingSystem:
         # 生成初始介面
         equipment_html = self._generate_equipment_diagram(scenario_info["initial_state"])
         dashboard_html = self._generate_dashboard(scenario_info["initial_state"])
+        equipment_status_html = self._generate_equipment_status()
 
-        system_message = f"""
-{alarm_message}
-
-==========================================
+        # 初始系統訊息加入對話歷史
+        initial_message = f"""{alarm_message}
 
 你是現場工程師，請用文字輸入你的操作！
 
 範例輸入：
-- 「檢查冷卻水流量」
-- 「調整冷卻水流量到 5.5」
-- 「詢問專家為什麼溫度上升」
-- 「停機更換過濾網」
+- 「檢查冷卻水流量」或「冷卻水怎麼樣」
+- 「詢問學長流量正常嗎」
+- 「停機更換過濾網」或「先停一下，換過濾網」
 
-請開始你的操作...
-"""
+請開始你的操作..."""
+
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": initial_message
+        })
 
         action_log = "[系統日誌]\n情境已開始，計時器啟動\n"
 
-        return equipment_html, dashboard_html, system_message, action_log
+        return equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
 
     def process_user_input(self, user_input: str, equipment_html: str,
-                          dashboard_html: str, system_message: str,
-                          action_log: str) -> Tuple[str, str, str, str, str]:
+                          dashboard_html: str, equipment_status_html: str,
+                          conversation_history: list,
+                          action_log: str) -> Tuple[str, str, str, str, list, str]:
         """
         處理學員輸入
 
         Returns:
-            (user_input_cleared, equipment_html, dashboard_html, system_message, action_log)
+            (user_input_cleared, equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log)
         """
         if not self.session_active:
-            return "", equipment_html, dashboard_html, "請先開始新情境", action_log
+            return "", equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log
 
         if not user_input.strip():
-            return "", equipment_html, dashboard_html, system_message, action_log
+            return "", equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log
+
+        # 保存原始輸入
+        original_input = user_input
 
         # 記錄時間
         timestamp = datetime.now().strftime("%H:%M:%S")
 
-        # 1. 解析輸入
+        # 1. 先用規則快速檢查（特別是「請問學長」這類明確的句子）
         parsed_input = self.nlu_controller.parse_input(user_input)
+
+        # 2. 如果規則無法理解，再使用 AI 理解
+        if parsed_input["intent"] == "unknown" and self.use_ai_mentor:
+            # 讓 AI 嘗試理解
+            ai_understanding = self.ai_mentor.understand_unclear_input(
+                user_input,
+                self.scenario_engine.get_scenario_info(),
+                self.scenario_engine.get_current_state()
+            )
+
+            if ai_understanding:
+                # AI 理解成功，轉換成標準指令
+                suggested_input = ai_understanding["suggestion"]
+                parsed_input = self.nlu_controller.parse_input(suggested_input)
+
+                # 保留原始輸入
+                if parsed_input["intent"] != "unknown":
+                    parsed_input["raw_input"] = user_input
+
+        # 3. 兩者都無法理解，顯示錯誤
+        if parsed_input["intent"] == "unknown":
+            error_msg = """抱歉，我不太理解你的意思。
+
+請試試：
+- 「檢查冷卻水」「檢查溫度」
+- 「學長，該怎麼辦」
+- 「停機」「更換過濾網」
+
+或用你自己的話說，我會盡量理解。"""
+
+            self.conversation_history.extend([
+                {"role": "user", "content": user_input},
+                {"role": "assistant", "content": error_msg}
+            ])
+            return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
 
         # 記錄動作
         self.action_history.append(parsed_input)
@@ -118,8 +187,15 @@ class SimulationTrainingSystem:
 
         # 2. 檢查是否是詢問專家
         if parsed_input["intent"] == "ask":
-            response = self._handle_expert_question(parsed_input, system_message)
-            return "", equipment_html, dashboard_html, response, action_log
+            expert_response = self._handle_expert_question(parsed_input)
+            # 格式化學長回應（不需要系統回應標題）
+            formatted_response = f"[學長回應]\n\n{expert_response}"
+            # 加入對話歷史
+            self.conversation_history.extend([
+                {"role": "user", "content": original_input},
+                {"role": "assistant", "content": formatted_response}
+            ])
+            return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
 
         # 3. 驗證動作
         current_state = self.scenario_engine.get_current_state()
@@ -128,24 +204,30 @@ class SimulationTrainingSystem:
         if not is_valid:
             if validation_msg == "warning_shutdown":
                 # 停機警告
-                warning_msg = f"""
-{system_message}
-
-==========================================
-[停機確認]
+                warning_msg = """[停機確認]
 
 停機會影響生產線的進度和產量。
 請確認是否真的需要停機？
 
 如果確定，請再次輸入：「確認停機」
-如果要繼續排查，請輸入其他檢查指令
-"""
+如果要繼續排查，請輸入其他檢查指令"""
+
                 current_state["shutdown_confirmed"] = False
-                return "", equipment_html, dashboard_html, warning_msg, action_log
+                # 加入對話歷史
+                self.conversation_history.extend([
+                    {"role": "user", "content": original_input},
+                    {"role": "assistant", "content": warning_msg}
+                ])
+                return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
             else:
                 # 其他驗證失敗
-                error_msg = f"{system_message}\n\n==========================================\n[錯誤] {validation_msg}"
-                return "", equipment_html, dashboard_html, error_msg, action_log
+                error_msg = f"[錯誤] {validation_msg}"
+                # 加入對話歷史
+                self.conversation_history.extend([
+                    {"role": "user", "content": original_input},
+                    {"role": "assistant", "content": error_msg}
+                ])
+                return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
 
         # 4. 執行動作
         action_result = self.action_executor.execute(parsed_input, current_state)
@@ -159,44 +241,80 @@ class SimulationTrainingSystem:
         equipment_html = self._generate_equipment_diagram(new_state)
         dashboard_html = self._generate_dashboard(new_state)
 
-        # 7. 生成系統回應
-        response_message = self._generate_response_message(
+        # 7. 特殊處理：如果是檢查動作，不顯示對話，只更新面板和設備狀態
+        if parsed_input["intent"] == "check":
+            # 檢查動作：靜默執行，更新面板數據和設備狀態
+            # 不加入對話歷史，讓學員自己觀察後再討論
+
+            # 更新設備狀態檢查結果
+            self._update_equipment_status(parsed_input, action_result, new_state)
+
+            # 生成設備狀態 HTML
+            equipment_status_html = self._generate_equipment_status()
+
+            self.last_update_time = datetime.now()
+            return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
+
+        # 8. 其他動作：生成系統回應
+        new_response = self._generate_response_message(
             action_result, update_info, new_state
         )
 
-        # 8. 檢查 AI 肯定
-        affirmation = self.ai_advisor.provide_affirmation(
-            parsed_input,
-            self.scenario_engine.scenario_type
-        )
+        # 9. 檢查 AI 動作回饋（非檢查動作才給回饋）
+        if self.use_ai_mentor:
+            # 使用 AI 學長的動作回饋
+            feedback = self.ai_mentor.provide_action_feedback(
+                parsed_input, action_result,
+                self.scenario_engine.get_scenario_info(), new_state
+            )
+            if feedback:
+                new_response += f"\n\n{feedback}"
+        else:
+            # 使用傳統專家的肯定訊息
+            affirmation = self.ai_advisor.provide_affirmation(
+                parsed_input,
+                self.scenario_engine.scenario_type
+            )
+            if affirmation:
+                new_response += f"\n\n{affirmation}"
 
-        if affirmation:
-            response_message += f"\n\n{affirmation}"
-
-        # 9. 檢查是否解決
+        # 10. 檢查是否解決
         if update_info.get("resolved"):
-            response_message += self._generate_completion_message()
+            new_response += "\n\n" + self._generate_completion_message()
             self.session_active = False
 
-        # 10. 更新時間
+        # 11. 加入對話歷史
+        self.conversation_history.extend([
+            {"role": "user", "content": original_input},
+            {"role": "assistant", "content": new_response}
+        ])
+
+        # 12. 更新時間
         self.last_update_time = datetime.now()
 
-        return "", equipment_html, dashboard_html, response_message, action_log
+        # 生成設備狀態 HTML（非檢查動作不更新設備狀態）
+        equipment_status_html = self._generate_equipment_status()
 
-    def _handle_expert_question(self, parsed_input: Dict, current_message: str) -> str:
+        return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
+
+    def _handle_expert_question(self, parsed_input: Dict) -> str:
         """處理專家諮詢"""
         question = parsed_input["raw_input"]
 
         scenario_info = self.scenario_engine.get_scenario_info()
         current_state = self.scenario_engine.get_current_state()
 
-        expert_response = self.ai_advisor.respond_to_question(
-            question, scenario_info, current_state, self.action_history
-        )
+        # 使用 AI 學長或傳統專家
+        if self.use_ai_mentor:
+            expert_response = self.ai_mentor.respond_to_question(
+                question, scenario_info, current_state, self.action_history
+            )
+        else:
+            expert_response = self.ai_advisor.respond_to_question(
+                question, scenario_info, current_state, self.action_history
+            )
 
-        response = f"{current_message}\n\n==========================================\n{expert_response}"
-
-        return response
+        return expert_response
 
     def _generate_response_message(self, action_result: Dict,
                                    update_info: Dict, new_state: Dict) -> str:
@@ -236,28 +354,34 @@ class SimulationTrainingSystem:
         message += f"安全性：{evaluation['safety_score']*100:.1f}%\n"
         message += f"\n總分：{evaluation['overall_score']*100:.1f} 分\n"
 
-        # AI 專家復盤
-        final_review = self.ai_advisor.provide_final_review(
-            scenario_info, evaluation, self.action_history
-        )
+        # AI 復盤
+        if self.use_ai_mentor:
+            final_review = self.ai_mentor.provide_final_review(
+                scenario_info, evaluation, self.action_history
+            )
+        else:
+            final_review = self.ai_advisor.provide_final_review(
+                scenario_info, evaluation, self.action_history
+            )
 
         message += f"\n\n{final_review}"
 
         return message
 
     def auto_progress(self, equipment_html: str, dashboard_html: str,
-                     system_message: str, action_log: str) -> Tuple[str, str, str, str]:
+                     equipment_status_html: str, conversation_history: list,
+                     action_log: str) -> Tuple[str, str, str, list, str]:
         """
         自動演進故障（定時觸發）
 
         Returns:
-            (equipment_html, dashboard_html, system_message, action_log)
+            (equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log)
         """
         if not self.session_active:
-            return equipment_html, dashboard_html, system_message, action_log
+            return equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log
 
         if self.last_update_time is None:
-            return equipment_html, dashboard_html, system_message, action_log
+            return equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log
 
         # 計算經過時間
         now = datetime.now()
@@ -275,7 +399,21 @@ class SimulationTrainingSystem:
 
             # 添加演進訊息
             progression_msg = progression_info["message"]
-            system_message = f"{system_message}\n\n{progression_msg}"
+
+            # AI 學長階段轉換評論
+            if self.use_ai_mentor:
+                mentor_comment = self.ai_mentor.provide_stage_transition_comment(
+                    self.scenario_engine.get_scenario_info(),
+                    progression_info.get("new_stage", 0),
+                    progression_info.get("symptoms", [])
+                )
+                progression_msg += "\n\n" + mentor_comment
+
+            # 系統訊息加入對話歷史
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": progression_msg
+            })
 
             # 更新日誌
             timestamp = now.strftime("%H:%M:%S")
@@ -283,7 +421,7 @@ class SimulationTrainingSystem:
 
         self.last_update_time = now
 
-        return equipment_html, dashboard_html, system_message, action_log
+        return equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
 
     def _generate_equipment_diagram(self, state: Dict) -> str:
         """生成設備示意圖"""
@@ -446,11 +584,146 @@ class SimulationTrainingSystem:
 
         return html
 
+    def _update_equipment_status(self, parsed_input: Dict, action_result: Dict, current_state: Dict):
+        """更新設備狀態檢查結果"""
 
-def create_simulation_interface(secom_data_path: str):
+        target = parsed_input.get("target")
+        if not target:
+            return
+
+        # 根據檢查目標生成詳細的設備狀態資訊
+        component_name = ""
+        status = "normal"
+        message = ""
+
+        if target == "cooling":
+            component_name = "冷卻水系統"
+            flow_rate = current_state.get("cooling_flow", 5.0)
+            filter_clogged = current_state.get("filter_clogged", False)
+
+            if flow_rate < 4.5:
+                status = "warning"
+                message = f"流量：{flow_rate:.2f} L/min（偏低）\n"
+                if filter_clogged:
+                    message += "過濾網：堵塞（發現大量雜質）\n"
+                    message += "管路：O環可能老化\n"
+                    message += "建議：停機更換過濾網"
+                else:
+                    message += "管路壓力：偏低\n"
+                    message += "建議：檢查管路連接"
+            else:
+                message = f"流量：{flow_rate:.2f} L/min（正常）\n過濾網：正常\n管路：密封良好"
+
+        elif target == "vacuum":
+            component_name = "真空系統"
+            vacuum_pressure = current_state.get("vacuum_pressure", 1e-6)
+            vacuum_leak = current_state.get("vacuum_leak", False)
+
+            if vacuum_leak:
+                status = "warning"
+                message = f"壓力：{vacuum_pressure:.2e} Torr（異常）\n"
+                message += "真空管：發現微小裂痕（O環老化）\n"
+                message += "閥門：密封圈磨損\n"
+                message += "建議：更換真空管O環密封圈"
+            else:
+                message = f"壓力：{vacuum_pressure:.2e} Torr（正常）\n真空泵：運作正常\n管路：密封良好"
+
+        elif target == "temperature":
+            component_name = "溫控系統"
+            temp = current_state.get("lens_temp", 23.0)
+
+            if temp > 25:
+                status = "warning"
+                message = f"鏡頭溫度：{temp:.1f}°C（偏高）\n"
+                message += "散熱風扇：轉速正常\n"
+                message += "可能原因：冷卻水流量不足\n"
+                message += "建議：檢查冷卻水系統"
+            else:
+                message = f"鏡頭溫度：{temp:.1f}°C（正常）\n散熱系統：運作正常"
+
+        elif target == "filter":
+            component_name = "過濾網"
+            filter_clogged = current_state.get("filter_clogged", False)
+
+            if filter_clogged:
+                status = "warning"
+                message = "狀態：堵塞\n積累雜質：嚴重\n流通性：受阻\n建議：立即更換"
+            else:
+                message = "狀態：正常\n積累雜質：輕微\n流通性：良好"
+
+        elif target == "light":
+            component_name = "光源系統"
+            light_intensity = current_state.get("light_intensity", 100)
+
+            if light_intensity < 95:
+                status = "warning"
+                message = f"強度：{light_intensity:.1f}%（偏低）\n"
+                message += "光學鏡片：可能有污染\n"
+                message += "建議：清潔光學元件"
+            else:
+                message = f"強度：{light_intensity:.1f}%（正常）\n光學元件：清潔"
+
+        elif target == "power":
+            component_name = "電源系統"
+            message = "供電：正常\n電壓：穩定\n插頭：連接良好"
+
+        else:
+            component_name = f"{target}"
+            message = "已檢查，狀態正常"
+
+        # 更新設備狀態字典
+        self.equipment_status[component_name] = {
+            "status": status,
+            "message": message
+        }
+
+    def _generate_equipment_status(self) -> str:
+        """生成設備狀態檢視"""
+
+        html = """
+        <div style="background: #f0f4f8; padding: 15px; border-radius: 10px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 15px;">
+            <h3 style="text-align: center; margin-top: 0; color: #333;">
+                設備狀態檢視
+            </h3>
+        """
+
+        if not self.equipment_status:
+            html += """
+            <div style="text-align: center; color: #666; padding: 20px;">
+                <p>尚未檢查任何設備</p>
+                <p style="font-size: 0.9em;">輸入「檢查XX」來查看設備狀態</p>
+            </div>
+            """
+        else:
+            for component, status in self.equipment_status.items():
+                icon = "✓" if status["status"] == "normal" else "⚠"
+                color = "#44aa44" if status["status"] == "normal" else "#ff8800"
+
+                html += f"""
+                <div style="margin-bottom: 12px; padding: 10px; background: white;
+                           border-left: 4px solid {color}; border-radius: 4px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                        <span style="font-size: 1.2em; margin-right: 8px;">{icon}</span>
+                        <span style="font-weight: bold; color: #333;">{component}</span>
+                    </div>
+                    <div style="color: #666; font-size: 0.9em; margin-left: 28px;">
+                        {status["message"]}
+                    </div>
+                </div>
+                """
+
+        html += """
+        </div>
+        """
+
+        return html
+
+
+def create_simulation_interface(secom_data_path: str, use_ai_mentor: bool = True):
     """建立情境模擬介面"""
 
-    system = SimulationTrainingSystem(secom_data_path)
+    system = SimulationTrainingSystem(secom_data_path, use_ai_mentor=use_ai_mentor)
 
     with gr.Blocks(title="Simulation Training System") as demo:
 
@@ -474,20 +747,20 @@ def create_simulation_interface(secom_data_path: str):
             )
             start_btn = gr.Button("開始新情境", variant="primary", size="lg")
 
-        # 上半部：設備圖 + 參數儀表
+        # 上半部：設備圖 + 參數儀表 + 設備狀態
         with gr.Row():
             with gr.Column(scale=1):
                 equipment_display = gr.HTML(label="設備狀態")
 
             with gr.Column(scale=1):
                 dashboard_display = gr.HTML(label="參數監控")
+                equipment_status_display = gr.HTML(label="設備檢查")
 
-        # 系統訊息區
-        system_messages = gr.Textbox(
-            label="系統訊息",
-            lines=15,
-            max_lines=20,
-            interactive=False
+        # 系統訊息區（使用 Chatbot 以更好顯示對話歷史）
+        system_messages = gr.Chatbot(
+            label="對話歷史",
+            height=400,
+            show_label=True
         )
 
         # 輸入區（大文字框）
@@ -513,32 +786,32 @@ def create_simulation_interface(secom_data_path: str):
 
         # 事件綁定
         def start_scenario(difficulty):
-            eq, dash, msg, log = system.start_new_scenario(difficulty)
-            return eq, dash, msg, log, gr.Timer(active=True)
+            eq, dash, eq_status, msg, log = system.start_new_scenario(difficulty)
+            return eq, dash, eq_status, msg, log, gr.Timer(active=True)
 
         start_btn.click(
             fn=start_scenario,
             inputs=[difficulty_dropdown],
-            outputs=[equipment_display, dashboard_display, system_messages, action_log, timer]
+            outputs=[equipment_display, dashboard_display, equipment_status_display, system_messages, action_log, timer]
         )
 
         submit_btn.click(
             fn=system.process_user_input,
-            inputs=[user_input, equipment_display, dashboard_display, system_messages, action_log],
-            outputs=[user_input, equipment_display, dashboard_display, system_messages, action_log]
+            inputs=[user_input, equipment_display, dashboard_display, equipment_status_display, system_messages, action_log],
+            outputs=[user_input, equipment_display, dashboard_display, equipment_status_display, system_messages, action_log]
         )
 
         user_input.submit(
             fn=system.process_user_input,
-            inputs=[user_input, equipment_display, dashboard_display, system_messages, action_log],
-            outputs=[user_input, equipment_display, dashboard_display, system_messages, action_log]
+            inputs=[user_input, equipment_display, dashboard_display, equipment_status_display, system_messages, action_log],
+            outputs=[user_input, equipment_display, dashboard_display, equipment_status_display, system_messages, action_log]
         )
 
         # 定時自動演進
         timer.tick(
             fn=system.auto_progress,
-            inputs=[equipment_display, dashboard_display, system_messages, action_log],
-            outputs=[equipment_display, dashboard_display, system_messages, action_log]
+            inputs=[equipment_display, dashboard_display, equipment_status_display, system_messages, action_log],
+            outputs=[equipment_display, dashboard_display, equipment_status_display, system_messages, action_log]
         )
 
     return demo
