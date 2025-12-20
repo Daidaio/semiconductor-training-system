@@ -19,7 +19,7 @@ from core.ai_expert_advisor import AIExpertAdvisor
 from core.ai_scenario_mentor import AIScenarioMentor
 from core.digital_twin import LithographyDigitalTwin
 from core.closed_loop_control import ClosedLoopController
-from interface.equipment_visualizer_real_photo import RealPhotoEquipmentVisualizer
+from interface.equipment_visualizer_industrial import IndustrialEquipmentVisualizer
 import os
 
 
@@ -48,7 +48,7 @@ class SimulationTrainingSystem:
             print("[OK] 使用傳統專家顧問模式")
 
         # 設備視覺化器（使用真實照片模式）
-        self.equipment_visualizer = RealPhotoEquipmentVisualizer()
+        self.equipment_visualizer = IndustrialEquipmentVisualizer()
         print("[OK] 真實照片視覺化器已載入 (ASML 設備大圖 + 故障標示)")
 
         # 閉環控制系統

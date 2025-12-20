@@ -30,11 +30,18 @@ MODES = {
         "description": "原始版本，簡潔的示意圖"
     },
     "4": {
-        "name": "互動式視覺化模式（推薦）",
+        "name": "互動式視覺化模式",
         "class": "InteractiveEquipmentVisualizer",
         "import": "from interface.equipment_visualizer_interactive import InteractiveEquipmentVisualizer",
         "init": "InteractiveEquipmentVisualizer()",
         "description": "可點擊部件查看近距離特寫，紅燈標示故障位置"
+    },
+    "5": {
+        "name": "工業產線視覺化模式（推薦）",
+        "class": "IndustrialEquipmentVisualizer",
+        "import": "from interface.equipment_visualizer_industrial import IndustrialEquipmentVisualizer",
+        "init": "IndustrialEquipmentVisualizer()",
+        "description": "仿造 Paper 圖片 2 風格，多設備監控、即時狀態彈窗、故障告警面板"
     }
 }
 
@@ -144,14 +151,14 @@ def main():
 
     if update_interface_file(choice):
         print()
-        print("✅ 切換完成！")
+        print("[OK] 切換完成！")
         print()
         print("現在執行以下命令啟動系統：")
         print("  python start_simulation.py")
         print()
     else:
         print()
-        print("❌ 切換失敗，請檢查錯誤訊息")
+        print("[ERROR] 切換失敗，請檢查錯誤訊息")
 
 
 if __name__ == "__main__":
