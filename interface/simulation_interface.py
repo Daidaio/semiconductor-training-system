@@ -18,6 +18,7 @@ from core.natural_language_controller import NaturalLanguageController, ActionEx
 from core.ai_expert_advisor import AIExpertAdvisor
 from core.ai_scenario_mentor import AIScenarioMentor
 from core.digital_twin import LithographyDigitalTwin
+from core.closed_loop_control import ClosedLoopController
 from interface.equipment_visualizer_real_photo import RealPhotoEquipmentVisualizer
 import os
 
@@ -49,6 +50,13 @@ class SimulationTrainingSystem:
         # 設備視覺化器（使用真實照片模式）
         self.equipment_visualizer = RealPhotoEquipmentVisualizer()
         print("[OK] 真實照片視覺化器已載入 (ASML 設備大圖 + 故障標示)")
+
+        # 閉環控制系統
+        self.closed_loop = ClosedLoopController(
+            sensors=self.scenario_engine.sensors,
+            process_db=self.scenario_engine.process_db
+        )
+        print("[OK] 閉環控制系統已載入")
 
         # 系統狀態
         self.current_scenario = None
@@ -89,6 +97,28 @@ class SimulationTrainingSystem:
         # 重置對話歷史和設備狀態
         self.conversation_history = []
         self.equipment_status = {}
+
+        # 啟動閉環監控系統
+        def alarm_callback(alarm):
+            """告警回調 - 記錄到對話歷史"""
+            alarm_msg = f"\n[自動告警] {alarm.parameter_name} 異常\n"
+            alarm_msg += f"當前值: {alarm.current_value:.4f}\n"
+            alarm_msg += f"偏移: {alarm.deviation_percent:.1f}%\n"
+            alarm_msg += f"診斷: {alarm.diagnosis}\n"
+            alarm_msg += f"建議: {alarm.suggestion}"
+            print(alarm_msg)  # 在後台輸出
+
+        def clear_callback(alarm):
+            """告警解除回調"""
+            clear_msg = f"\n[自動解除] {alarm.parameter_name} 已恢復正常\n"
+            clear_msg += f"處置時長: {alarm.handling_duration:.1f} 秒"
+            print(clear_msg)  # 在後台輸出
+
+        self.closed_loop.start_monitoring(
+            interval=1.0,
+            alarm_callback=alarm_callback,
+            clear_callback=clear_callback
+        )
 
         # 重置 AI 系統並設定情境上下文
         if self.use_ai_mentor:

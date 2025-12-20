@@ -2,6 +2,10 @@
 """
 情境引擎 (Scenario Engine)
 管理故障情境的初始化、演進和狀態模擬
+
+整合數位孿生模組:
+- SimulatedSensors: 即時感測器數據
+- ProcessParameterDB: 製程參數資料庫
 """
 
 import pandas as pd
@@ -9,6 +13,8 @@ import numpy as np
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 import random
+from core.simulated_sensors import LithographyEquipmentSensors
+from core.process_database import ProcessParameterDB
 
 
 class ScenarioEngine:
@@ -34,6 +40,12 @@ class ScenarioEngine:
 
         print(f"  - Normal samples: {len(self.normal_data)}")
         print(f"  - Fault samples: {len(self.fault_data)}")
+
+        # 初始化數位孿生模組
+        print("[Init] Digital Twin modules...")
+        self.sensors = LithographyEquipmentSensors()
+        self.process_db = ProcessParameterDB()
+        print("[OK] Digital Twin modules ready!")
 
         # 故障情境定義
         self.fault_scenarios = self._define_fault_scenarios()
@@ -348,17 +360,33 @@ class ScenarioEngine:
         self.progression_stage = 0
         self.time_elapsed = 0
 
-        # 初始化狀態
+        # 重置所有感測器到正常狀態
+        self.sensors.clear_all_faults()
+        self.sensors.reset_all()
+
+        # 根據情境類型注入故障到模擬感測器
+        if scenario_type == "cooling_failure":
+            self.sensors.simulate_cooling_failure(flow_reduction=0.3)
+        elif scenario_type == "vacuum_leak":
+            self.sensors.simulate_vacuum_leak(leak_rate=1.0e-7)
+        elif scenario_type == "filter_clogged":
+            self.sensors.simulate_filter_clogging(clog_rate=0.5)
+        elif scenario_type == "light_degradation":
+            self.sensors.simulate_light_source_degradation(degradation_rate=0.01)
+
+        # 初始化狀態 - 從感測器讀取即時數據
+        sensor_readings = self.sensors.read_all()
         initial_state = self.current_scenario["progression"][0]["state"].copy()
 
-        # 基礎狀態
+        # 基礎狀態 - 合併感測器數據
         self.current_state = {
             "is_running": True,
             "scenario_type": scenario_type,
             "scenario_name": self.current_scenario["name"],
             "start_time": self.scenario_start_time.isoformat(),
             "difficulty": difficulty,
-            **initial_state
+            **initial_state,
+            **sensor_readings  # 覆蓋為即時感測器數據
         }
 
         # 生成初始警報
@@ -528,8 +556,20 @@ class ScenarioEngine:
         return False
 
     def get_current_state(self) -> Dict:
-        """取得當前狀態"""
-        return self.current_state.copy()
+        """
+        取得當前狀態
+
+        Returns:
+            當前狀態字典 (包含即時感測器數據)
+        """
+        # 讀取即時感測器數據
+        sensor_readings = self.sensors.read_all()
+
+        # 合併到當前狀態
+        current_state = self.current_state.copy()
+        current_state.update(sensor_readings)
+
+        return current_state
 
     def get_scenario_info(self) -> Dict:
         """取得情境資訊"""
