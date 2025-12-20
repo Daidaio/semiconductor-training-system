@@ -1,0 +1,10 @@
+{
+  "student_id": "123",
+  "current_stage": "stage1_theory",
+  "theory_score": 77.0,
+  "practice_score": 0,
+  "theory_completed": true,
+  "practice_completed": false,
+  "created_at": "2025-12-05T09:27:39.341857",
+  "last_updated": "2025-12-05T15:53:43.673999"
+}

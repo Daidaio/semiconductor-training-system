@@ -18,6 +18,7 @@ from core.natural_language_controller import NaturalLanguageController, ActionEx
 from core.ai_expert_advisor import AIExpertAdvisor
 from core.ai_scenario_mentor import AIScenarioMentor
 from core.digital_twin import LithographyDigitalTwin
+from interface.equipment_visualizer_real_photo import RealPhotoEquipmentVisualizer
 import os
 
 
@@ -45,6 +46,10 @@ class SimulationTrainingSystem:
             self.ai_mentor = None
             print("[OK] 使用傳統專家顧問模式")
 
+        # 設備視覺化器（使用真實照片模式）
+        self.equipment_visualizer = RealPhotoEquipmentVisualizer()
+        print("[OK] 真實照片視覺化器已載入 (ASML 設備大圖 + 故障標示)")
+
         # 系統狀態
         self.current_scenario = None
         self.session_active = False
@@ -57,6 +62,9 @@ class SimulationTrainingSystem:
 
         # 設備狀態檢查結果（用於顯示實體部件狀態）
         self.equipment_status = {}
+
+        # 當前選中的部件（用於互動式視覺化）
+        self.selected_component = None
 
         print("[OK] System ready!")
 
@@ -199,6 +207,11 @@ class SimulationTrainingSystem:
 
         # 3. 驗證動作
         current_state = self.scenario_engine.get_current_state()
+
+        # 特殊處理：檢查是否是「確認停機」
+        if parsed_input["intent"] == "shutdown" and "確認" in original_input:
+            current_state["shutdown_confirmed"] = True
+
         is_valid, validation_msg = self.nlu_controller.validate_action(parsed_input, current_state)
 
         if not is_valid:
@@ -241,16 +254,22 @@ class SimulationTrainingSystem:
         equipment_html = self._generate_equipment_diagram(new_state)
         dashboard_html = self._generate_dashboard(new_state)
 
-        # 7. 特殊處理：如果是檢查動作，不顯示對話，只更新面板和設備狀態
+        # 7. 特殊處理：如果是檢查動作，顯示檢查結果
         if parsed_input["intent"] == "check":
-            # 檢查動作：靜默執行，更新面板數據和設備狀態
-            # 不加入對話歷史，讓學員自己觀察後再討論
-
             # 更新設備狀態檢查結果
             self._update_equipment_status(parsed_input, action_result, new_state)
 
             # 生成設備狀態 HTML
             equipment_status_html = self._generate_equipment_status()
+
+            # 生成檢查結果訊息（顯示在對話中）
+            check_response = self._generate_check_response(parsed_input, action_result, new_state)
+
+            # 加入對話歷史
+            self.conversation_history.extend([
+                {"role": "user", "content": original_input},
+                {"role": "assistant", "content": check_response}
+            ])
 
             self.last_update_time = datetime.now()
             return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
@@ -424,63 +443,8 @@ class SimulationTrainingSystem:
         return equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
 
     def _generate_equipment_diagram(self, state: Dict) -> str:
-        """生成設備示意圖"""
-
-        # 根據故障類型決定顯示顏色
-        lens_color = "#ff4444" if state.get("lens_temp", 23) > 25 else "#44ff44"
-        cooling_color = "#ff4444" if state.get("cooling_flow", 5.0) < 4.0 else "#44ff44"
-        vacuum_color = "#ff4444" if state.get("vacuum_leak", False) else "#44ff44"
-        alignment_color = "#ff4444" if state.get("alignment_error_x", 0) > 0.1 else "#44ff44"
-
-        html = f"""
-        <div style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-                    padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-            <h3 style="color: white; text-align: center; margin-top: 0;">
-                曝光機設備示意圖
-            </h3>
-            <svg width="100%" height="350" viewBox="0 0 400 350">
-                <!-- 鏡頭系統 -->
-                <rect x="150" y="20" width="100" height="60" fill="{lens_color}"
-                      stroke="#333" stroke-width="2" rx="5">
-                    <animate attributeName="opacity" values="1;0.7;1" dur="2s" repeatCount="indefinite"/>
-                </rect>
-                <text x="200" y="55" text-anchor="middle" fill="white" font-size="14">鏡頭</text>
-
-                <!-- 冷卻系統 -->
-                <rect x="20" y="100" width="80" height="50" fill="{cooling_color}"
-                      stroke="#333" stroke-width="2" rx="5"/>
-                <text x="60" y="130" text-anchor="middle" fill="white" font-size="12">冷卻系統</text>
-
-                <!-- 真空腔體 -->
-                <rect x="130" y="120" width="140" height="100" fill="{vacuum_color}"
-                      stroke="#333" stroke-width="3" rx="10"/>
-                <text x="200" y="175" text-anchor="middle" fill="white" font-size="14">真空腔體</text>
-
-                <!-- 對準系統 -->
-                <rect x="300" y="100" width="80" height="50" fill="{alignment_color}"
-                      stroke="#333" stroke-width="2" rx="5"/>
-                <text x="340" y="125" text-anchor="middle" fill="white" font-size="11">對準</text>
-                <text x="340" y="140" text-anchor="middle" fill="white" font-size="11">系統</text>
-
-                <!-- 晶圓平台 -->
-                <ellipse cx="200" cy="280" rx="60" ry="20" fill="#888" stroke="#333" stroke-width="2"/>
-                <text x="200" y="285" text-anchor="middle" fill="white" font-size="12">晶圓</text>
-
-                <!-- 連接線 -->
-                <line x1="60" y1="125" x2="130" y2="160" stroke="white" stroke-width="2"/>
-                <line x1="200" y1="80" x2="200" y2="120" stroke="white" stroke-width="2"/>
-                <line x1="270" y1="170" x2="300" y2="125" stroke="white" stroke-width="2"/>
-                <line x1="200" y1="220" x2="200" y1="260" stroke="white" stroke-width="2"/>
-            </svg>
-
-            <div style="text-align: center; color: white; margin-top: 10px; font-size: 12px;">
-                <span style="color: #44ff44;">● 正常</span>
-                <span style="margin-left: 20px; color: #ff4444;">● 異常</span>
-            </div>
-        </div>
-        """
-
-        return html
+        """生成設備視覺化圖（使用互動式視覺化器）"""
+        return self.equipment_visualizer.generate_equipment_view(state, self.selected_component)
 
     def _generate_dashboard(self, state: Dict) -> str:
         """生成參數儀表板"""
@@ -677,6 +641,37 @@ class SimulationTrainingSystem:
             "message": message
         }
 
+    def _generate_check_response(self, parsed_input: Dict, action_result: Dict, current_state: Dict) -> str:
+        """生成檢查動作的對話回應"""
+        target = parsed_input.get("target", "未知")
+
+        # 獲取檢查結果
+        target_name_map = {
+            "cooling": "冷卻水系統",
+            "vacuum": "真空系統",
+            "temperature": "溫控系統",
+            "filter": "過濾網",
+            "light": "光源系統",
+            "power": "電源系統"
+        }
+
+        component_name = target_name_map.get(target, target)
+
+        # 從 equipment_status 獲取詳細資訊
+        if component_name in self.equipment_status:
+            status_info = self.equipment_status[component_name]
+            message = status_info["message"]
+            status = status_info["status"]
+
+            if status == "warning":
+                response = f"[檢查結果]\n\n你檢查了{component_name}，發現以下狀況：\n\n{message}"
+            else:
+                response = f"[檢查結果]\n\n你檢查了{component_name}：\n\n{message}"
+        else:
+            response = f"[檢查結果]\n\n你檢查了{component_name}，一切正常。"
+
+        return response
+
     def _generate_equipment_status(self) -> str:
         """生成設備狀態檢視"""
 
@@ -719,6 +714,27 @@ class SimulationTrainingSystem:
 
         return html
 
+    def select_component(self, component: str, equipment_html: str,
+                        dashboard_html: str, equipment_status_html: str,
+                        conversation_history: list, action_log: str) -> Tuple[str, str, str, list, str]:
+        """
+        處理部件選擇（用於互動式視覺化）
+
+        Returns:
+            (equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log)
+        """
+        if not self.session_active:
+            return equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log
+
+        # 更新選中的部件
+        self.selected_component = component if component != "overview" else None
+
+        # 重新生成設備視覺化
+        current_state = self.scenario_engine.get_current_state()
+        equipment_html = self._generate_equipment_diagram(current_state)
+
+        return equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log
+
 
 def create_simulation_interface(secom_data_path: str, use_ai_mentor: bool = True):
     """建立情境模擬介面"""
@@ -750,7 +766,7 @@ def create_simulation_interface(secom_data_path: str, use_ai_mentor: bool = True
         # 上半部：設備圖 + 參數儀表 + 設備狀態
         with gr.Row():
             with gr.Column(scale=1):
-                equipment_display = gr.HTML(label="設備狀態")
+                equipment_display = gr.HTML(label="設備狀態", elem_id="equipment_display")
 
             with gr.Column(scale=1):
                 dashboard_display = gr.HTML(label="參數監控")
@@ -813,5 +829,6 @@ def create_simulation_interface(secom_data_path: str, use_ai_mentor: bool = True
             inputs=[equipment_display, dashboard_display, equipment_status_display, system_messages, action_log],
             outputs=[equipment_display, dashboard_display, equipment_status_display, system_messages, action_log]
         )
+
 
     return demo

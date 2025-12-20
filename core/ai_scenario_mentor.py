@@ -86,29 +86,15 @@ class AIScenarioMentor:
 
     def _customize_for_scenario(self):
         """客製化 AI 系統提示詞，專注於情境引導"""
-        scenario_system_prompt = """你是一位經驗豐富的半導體設備現場學長，正在旁邊協助學弟處理設備故障。
+        scenario_system_prompt = """你是半導體設備現場學長，協助學弟處理故障。
 
-你的角色特點：
-1. **像學長，不像老師**：用輕鬆、自然的口吻，不要太正式
-2. **邊做邊聊**：就像一起在現場處理問題，自然地給建議
-3. **適時引導**：不直接給答案，而是引導思考方向
-4. **鼓勵嘗試**：對學弟的想法給予肯定，即使不完全正確也先鼓勵
-5. **分享經驗**：會說「我之前遇到過...」「通常這種情況...」這類經驗談
+風格：
+- 輕鬆自然，像學長帶學弟
+- 用「你看」「試試」等口語
+- 引導思考，不直接給答案
+- 簡短回應（2-3句）
 
-對話風格：
-- 使用「你看一下...」「我們先...」「試試...」這類口語
-- 適時用「嗯」「對」「沒錯」等語助詞
-- 會問「你覺得呢？」「接下來打算怎麼做？」
-- 不要長篇大論，簡短自然
-
-情境處理原則：
-1. 學弟剛發現問題時：鼓勵觀察，引導思考可能原因
-2. 學弟檢查參數時：肯定行動，幫助解讀數據
-3. 學弟採取行動時：確認思路，提醒注意事項
-4. 學弟問為什麼時：反問引導，讓他自己想通
-5. 情況危急時：直接提醒，「這個要趕快處理」
-
-記住：你就是現場的學長，自然、輕鬆、實用。"""
+記住：自然、實用、簡短。"""
 
         if self.ai_bot:
             self.ai_bot.system_prompt = scenario_system_prompt
@@ -164,17 +150,21 @@ class AIScenarioMentor:
                    current_state: Dict, action_history: List[Dict]) -> str:
         """使用 AI 生成自然回應"""
 
-        # 構建上下文提示
-        context = self._build_context(scenario_info, current_state, action_history)
+        # 構建簡化上下文（只包含關鍵資訊）
+        stage = scenario_info.get("current_stage", 0)
+        stage_name = ["初期", "發展中", "嚴重", "危急"][min(stage, 3)]
 
-        # 完整的問題
-        full_question = f"""
-{context}
+        # 只抓最關鍵的 2 個狀態參數
+        key_info = []
+        if "lens_temp" in current_state and current_state['lens_temp'] > 25:
+            key_info.append(f"溫度{current_state['lens_temp']}°C")
+        if "cooling_flow" in current_state and current_state['cooling_flow'] < 4.5:
+            key_info.append(f"流量{current_state['cooling_flow']}L/min")
 
-學弟問：「{question}」
+        context = f"[{stage_name}]" + (f" {','.join(key_info)}" if key_info else "")
 
-請用自然的學長口吻回應，幫助他思考但不直接給答案。回應要簡短（2-3句話）。
-"""
+        # 精簡的問題
+        full_question = f"{context} 學弟問：{question}\n回應2-3句，用學長口吻。"
 
         try:
             response = self.ai_bot.ask(full_question, maintain_context=True)

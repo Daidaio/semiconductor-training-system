@@ -16,9 +16,12 @@ from integration.training_coordinator import TrainingCoordinator, TrainingStage
 from integration.progress_tracker import ProgressTracker, InteractionType
 from integration.smart_recommender import SmartRecommender
 from integration.evaluation_system import EvaluationSystem
+from stage1_theory.senior_mentor_bot import SeniorMentorBot
+from stage1_theory.local_mentor_bot import LocalMentorBot
 from core.scenario_engine import ScenarioEngine
 from core.natural_language_controller import NaturalLanguageController, ActionExecutor
 from core.digital_twin import LithographyDigitalTwin
+import os
 
 
 class UnifiedTrainingSystem:
@@ -44,6 +47,39 @@ class UnifiedTrainingSystem:
         # 新增整合模組
         self.recommender = SmartRecommender()
         self.evaluator = EvaluationSystem()
+
+        # 階段 1 模組（理論學習）- AI學長BOT
+        self.mentor_bot = None
+        self.use_ai_bot = False
+        self.llm_mode = "mock"  # "claude", "local", "mock"
+
+        # 優先順序：本地 LLM > Claude API > Mock
+        # 1. 嘗試本地 LLM (Ollama)
+        try:
+            local_bot = LocalMentorBot(model_name=os.getenv("LOCAL_LLM_MODEL", "qwen2.5:7b"))
+            # 檢查是否可用（會自動檢查 Ollama）
+            if local_bot._check_ollama_available():
+                self.mentor_bot = local_bot
+                self.use_ai_bot = True
+                self.llm_mode = "local"
+                print(f"[OK] 本地 LLM 學長BOT已啟動（模型: {local_bot.model_name}）")
+        except Exception as e:
+            print(f"[Info] 本地 LLM 不可用: {e}")
+
+        # 2. 如果本地 LLM 不可用，嘗試 Claude API
+        if not self.use_ai_bot and os.getenv("ANTHROPIC_API_KEY"):
+            try:
+                self.mentor_bot = SeniorMentorBot()
+                self.use_ai_bot = True
+                self.llm_mode = "claude"
+                print("[OK] Claude API 學長BOT已啟動")
+            except Exception as e:
+                print(f"[Warning] Claude API 啟動失敗: {e}")
+
+        # 3. 都不可用，使用 Mock 模式
+        if not self.use_ai_bot:
+            print("[Info] 使用 Mock 模式（無 AI 功能）")
+            print("[Tip] 安裝 Ollama 即可使用本地 LLM: https://ollama.com/download")
 
         # 階段 2 模組（實作訓練）
         self.scenario_engine = None
@@ -175,7 +211,7 @@ class UnifiedTrainingSystem:
 
     def ask_theory_question(self, question: str, chat_history: list) -> Tuple[list, str]:
         """
-        理論問答（簡化版）
+        理論問答（AI 學長 BOT）
 
         Args:
             question: 學員問題
@@ -194,25 +230,21 @@ class UnifiedTrainingSystem:
             chat_history.append({"role": "assistant", "content": "請先登入"})
             return chat_history, ""
 
-        # Mock 回答（未來接入真實 RAG）
-        mock_answers = {
-            "cvd": "CVD（Chemical Vapor Deposition，化學氣相沉積）是一種重要的薄膜沉積技術，通過化學反應在晶圓表面形成薄膜。\n\n主要類型包括：\n- PECVD（電漿增強CVD）\n- LPCVD（低壓CVD）\n- APCVD（常壓CVD）",
-            "真空": "真空系統是半導體製程的關鍵設備，主要功能包括：\n\n1. 提供無污染的製程環境\n2. 控制反應氣體的流動\n3. 確保薄膜品質\n\n真空度通常需要達到 10⁻⁶ Torr 以下。",
-            "溫度": "溫度控制對製程品質至關重要，影響因素包括：\n\n1. 反應速率\n2. 薄膜品質\n3. 設備壽命\n\n通常需要精確控制在 ±0.5°C 以內。",
-        }
-
-        # 簡單匹配
-        answer = "這是一個好問題！\n\n"
-        found_answer = False
-
-        for keyword, mock_answer in mock_answers.items():
-            if keyword in question.lower():
-                answer += mock_answer
+        # 使用 AI 學長 BOT 或 Mock 模式
+        if self.use_ai_bot and self.mentor_bot:
+            try:
+                # 使用 AI BOT 回答（包含反問機制）
+                answer = self.mentor_bot.ask(question, maintain_context=True)
                 found_answer = True
-                break
-
-        if not found_answer:
-            answer += "關於這個問題，我建議你查閱相關的製程手冊和 SOP 文件。\n\n你也可以詢問更具體的問題，例如：\n- CVD 是什麼？\n- 真空系統如何運作？\n- 溫度控制的重要性？"
+            except Exception as e:
+                # AI 失敗時退回到 Mock 模式
+                print(f"[Warning] AI BOT 回答失敗: {e}，使用 Mock 模式")
+                answer = self._mock_answer(question)
+                found_answer = "cvd" in question.lower() or "真空" in question.lower() or "溫度" in question.lower()
+        else:
+            # Mock 模式
+            answer = self._mock_answer(question)
+            found_answer = "cvd" in question.lower() or "真空" in question.lower() or "溫度" in question.lower()
 
         # 記錄互動
         if self.tracker:
@@ -227,9 +259,27 @@ class UnifiedTrainingSystem:
             chat_history = []
 
         chat_history.append({"role": "user", "content": question})
-        chat_history.append({"role": "assistant", "content": answer + "\n\n💡 你理解了嗎？還有什麼想問的？"})
+        chat_history.append({"role": "assistant", "content": answer})
 
         return chat_history, ""
+
+    def _mock_answer(self, question: str) -> str:
+        """Mock 回答（當 AI 不可用時）"""
+        mock_answers = {
+            "cvd": "CVD（Chemical Vapor Deposition，化學氣相沉積）是一種重要的薄膜沉積技術，通過化學反應在晶圓表面形成薄膜。\n\n主要類型包括：\n- PECVD（電漿增強CVD）\n- LPCVD（低壓CVD）\n- APCVD（常壓CVD）",
+            "真空": "真空系統是半導體製程的關鍵設備，主要功能包括：\n\n1. 提供無污染的製程環境\n2. 控制反應氣體的流動\n3. 確保薄膜品質\n\n真空度通常需要達到 10⁻⁶ Torr 以下。",
+            "溫度": "溫度控制對製程品質至關重要，影響因素包括：\n\n1. 反應速率\n2. 薄膜品質\n3. 設備壽命\n\n通常需要精確控制在 ±0.5°C 以內。",
+        }
+
+        answer = "這是一個好問題！\n\n"
+        for keyword, mock_answer in mock_answers.items():
+            if keyword in question.lower():
+                answer += mock_answer
+                answer += "\n\n💡 你理解了嗎？還有什麼想問的？"
+                return answer
+
+        answer += "關於這個問題，我建議你查閱相關的製程手冊和 SOP 文件。\n\n你也可以詢問更具體的問題，例如：\n- CVD 是什麼？\n- 真空系統如何運作？\n- 溫度控制的重要性？"
+        return answer
 
     def take_theory_test(self) -> Tuple[str, str, str]:
         """
