@@ -18,7 +18,9 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 from datetime import datetime
 import threading
+import os
 from core.physics_coupling_model import PhysicsCouplingModel
+from core.secom_realtime_generator import SECOMRealtimeGenerator
 
 
 @dataclass
@@ -130,8 +132,12 @@ class SimulatedSensor:
 class LithographyEquipmentSensors:
     """光刻設備模擬感測器組"""
 
-    def __init__(self):
-        """初始化所有感測器"""
+    def __init__(self, secom_data_path: str = None):
+        """初始化所有感測器
+
+        Args:
+            secom_data_path: SECOM 數據集路徑（可選）
+        """
         self.sensors = self._create_sensors()
         self.is_running = False
         self.data_thread = None
@@ -140,6 +146,29 @@ class LithographyEquipmentSensors:
         # 物理耦合模型 (NEW: 提升真實性)
         self.physics_model = PhysicsCouplingModel()
         self.enable_physics_coupling = True  # 可切換開關
+
+        # SECOM 即時生成器 (NEW: 逐秒真實數據)
+        self.secom_generator = None
+        self.enable_secom_realtime = True
+
+        if secom_data_path and os.path.exists(secom_data_path):
+            try:
+                self.secom_generator = SECOMRealtimeGenerator(secom_data_path)
+                print(f"[OK] SECOM 即時生成器已啟用")
+            except Exception as e:
+                print(f"[WARN] 無法載入 SECOM 生成器: {e}")
+                self.enable_secom_realtime = False
+        else:
+            # 嘗試自動尋找 SECOM 數據集
+            secom_paths = ["../uci-secom.csv", "../../uci-secom.csv", "uci-secom.csv"]
+            for path in secom_paths:
+                if os.path.exists(path):
+                    try:
+                        self.secom_generator = SECOMRealtimeGenerator(path)
+                        print(f"[OK] SECOM 即時生成器已啟用 (從 {path})")
+                        break
+                    except:
+                        continue
 
     def _create_sensors(self) -> Dict[str, SimulatedSensor]:
         """建立所有感測器"""
@@ -246,17 +275,25 @@ class LithographyEquipmentSensors:
 
     def read_all(self) -> Dict[str, float]:
         """
-        讀取所有感測器 (包含物理耦合效應)
+        讀取所有感測器 (包含 SECOM 即時數據 + 物理耦合效應)
 
         Returns:
             所有感測器讀數 {sensor_name: value}
         """
-        # 1. 讀取原始感測器數據
-        raw_readings = {}
-        for name, sensor in self.sensors.items():
-            raw_readings[name] = sensor.read()
+        # 優先級: SECOM 即時生成 > 原始感測器
+        if self.enable_secom_realtime and self.secom_generator:
+            # 使用 SECOM 生成器產生逐秒真實數據
+            raw_readings = self.secom_generator.generate_next_values(
+                dt=1.0,
+                use_normalization=True
+            )
+        else:
+            # 回退到原始感測器模擬
+            raw_readings = {}
+            for name, sensor in self.sensors.items():
+                raw_readings[name] = sensor.read()
 
-        # 2. 應用物理耦合模型 (NEW: 參數互相影響)
+        # 應用物理耦合模型 (NEW: 參數互相影響)
         if self.enable_physics_coupling:
             coupled_readings = self.physics_model.update_coupled_parameters(
                 raw_readings, dt=1.0
@@ -317,7 +354,7 @@ class LithographyEquipmentSensors:
 
     def simulate_cooling_failure(self, flow_reduction: float = 0.3):
         """
-        模擬冷卻系統故障
+        模擬冷卻系統故障（同時通知 SECOM 生成器）
 
         Args:
             flow_reduction: 流量減少比例 (0.3 = 減少 30%)
@@ -329,6 +366,13 @@ class LithographyEquipmentSensors:
 
         # 溫度上升
         self.inject_fault("lens_temp", "drift", 0.01)  # 每秒上升 0.01°C
+
+        # 如果使用 SECOM 生成器，注入漂移
+        if self.secom_generator:
+            drift = self.secom_generator.inject_fault_drift(
+                'cooling_flow', fault_flow, duration=10.0
+            )
+            print(f"[SECOM] 冷卻流量將在 10 秒內降至 {fault_flow:.1f} L/min")
 
         print(f"[Scenario] 冷卻系統故障: 流量降至 {fault_flow:.1f} L/min")
 

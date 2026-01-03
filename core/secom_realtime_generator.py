@@ -102,8 +102,8 @@ class SECOMRealtimeGenerator:
                             autocorr=autocorr
                         )
 
-                        # 初始化當前值
-                        self.current_values[sim_param] = mean
+                        # 初始化當前值（標準化到模擬尺度）
+                        self.current_values[sim_param] = self.normalize_secom_to_simulation_scale(sim_param, mean)
 
             print(f"[OK] 已載入 {len(self.param_stats)} 個參數的 SECOM 統計特性")
 
