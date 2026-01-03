@@ -18,6 +18,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 from datetime import datetime
 import threading
+from core.physics_coupling_model import PhysicsCouplingModel
 
 
 @dataclass
@@ -136,6 +137,10 @@ class LithographyEquipmentSensors:
         self.data_thread = None
         self.latest_readings = {}
 
+        # 物理耦合模型 (NEW: 提升真實性)
+        self.physics_model = PhysicsCouplingModel()
+        self.enable_physics_coupling = True  # 可切換開關
+
     def _create_sensors(self) -> Dict[str, SimulatedSensor]:
         """建立所有感測器"""
 
@@ -241,17 +246,26 @@ class LithographyEquipmentSensors:
 
     def read_all(self) -> Dict[str, float]:
         """
-        讀取所有感測器
+        讀取所有感測器 (包含物理耦合效應)
 
         Returns:
             所有感測器讀數 {sensor_name: value}
         """
-        readings = {}
+        # 1. 讀取原始感測器數據
+        raw_readings = {}
         for name, sensor in self.sensors.items():
-            readings[name] = sensor.read()
+            raw_readings[name] = sensor.read()
 
-        self.latest_readings = readings
-        return readings
+        # 2. 應用物理耦合模型 (NEW: 參數互相影響)
+        if self.enable_physics_coupling:
+            coupled_readings = self.physics_model.update_coupled_parameters(
+                raw_readings, dt=1.0
+            )
+            self.latest_readings = coupled_readings
+            return coupled_readings
+        else:
+            self.latest_readings = raw_readings
+            return raw_readings
 
     def read_sensor(self, sensor_name: str) -> Optional[float]:
         """
