@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git fetch:*)",
+      "Bash(python start_unified.py:*)",
+      "Bash(pip install:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill /F /PID 26616)",
+      "Bash(taskkill //F //PID 26616)",
+      "Bash(python start_simulation.py:*)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(taskkill //F //PID 8676)",
+      "Bash(ipconfig:*)",
+      "Bash(cmd //c:*)"
+    ]
+  }
+}
