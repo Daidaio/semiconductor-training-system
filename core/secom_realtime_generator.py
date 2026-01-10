@@ -44,7 +44,8 @@ class SECOMRealtimeGenerator:
         """
         self.secom_path = secom_csv_path
         self.param_stats: Dict[str, ParameterStatistics] = {}
-        self.current_values: Dict[str, float] = {}
+        self.current_values: Dict[str, float] = {}  # SECOM 原始尺度
+        self.current_values_normalized: Dict[str, float] = {}  # 標準化後的值
         self.mapping = self._create_parameter_mapping()
 
         # 載入並分析 SECOM 數據
@@ -102,8 +103,10 @@ class SECOMRealtimeGenerator:
                             autocorr=autocorr
                         )
 
-                        # 初始化當前值（標準化到模擬尺度）
-                        self.current_values[sim_param] = self.normalize_secom_to_simulation_scale(sim_param, mean)
+                        # 初始化當前值（SECOM 原始尺度）
+                        self.current_values[sim_param] = mean
+                        # 同時保存標準化後的值
+                        self.current_values_normalized[sim_param] = self.normalize_secom_to_simulation_scale(sim_param, mean)
 
             print(f"[OK] 已載入 {len(self.param_stats)} 個參數的 SECOM 統計特性")
 
@@ -134,7 +137,9 @@ class SECOMRealtimeGenerator:
                 max_val=max_val,
                 autocorr=0.95
             )
+            # 預設統計已經是模擬尺度，所以兩者相同
             self.current_values[param] = mean
+            self.current_values_normalized[param] = mean
 
     def normalize_secom_to_simulation_scale(self, param_name: str, secom_value: float) -> float:
         """
@@ -183,16 +188,17 @@ class SECOMRealtimeGenerator:
 
         Args:
             dt: 時間間隔 (秒)
-            drift: 參數漂移 {param_name: drift_rate}
+            drift: 參數漂移 {param_name: drift_rate} (在標準化尺度上)
             use_normalization: 是否標準化到模擬尺度
 
         Returns:
-            下一秒的參數值
+            下一秒的參數值 (標準化後)
         """
         next_values = {}
 
         for param_name, stats in self.param_stats.items():
-            current = self.current_values[param_name]
+            # 在 SECOM 原始尺度上運行 AR(1) 模型
+            current_secom = self.current_values[param_name]
 
             # AR(1) 模型: X_t = φ * X_{t-1} + (1-φ) * μ + ε
             # φ: 自相關係數, μ: 均值, ε: 白噪聲
@@ -201,22 +207,30 @@ class SECOMRealtimeGenerator:
             # 趨向均值的力量
             mean_reversion = (1 - phi) * stats.mean
 
-            # 白噪聲
+            # 白噪聲（SECOM 尺度）
             noise = np.random.normal(0, stats.std * np.sqrt(1 - phi**2))
 
-            # 下一個值
-            next_val = phi * current + mean_reversion + noise
+            # 下一個值（SECOM 尺度）
+            next_val_secom = phi * current_secom + mean_reversion + noise
+
+            # 限制在 SECOM 尺度範圍內
+            next_val_secom = np.clip(next_val_secom, stats.min_val, stats.max_val)
+
+            # 更新 SECOM 尺度的當前值
+            self.current_values[param_name] = next_val_secom
 
             # 標準化到模擬尺度
             if use_normalization:
-                next_val = self.normalize_secom_to_simulation_scale(param_name, next_val)
+                next_val_normalized = self.normalize_secom_to_simulation_scale(param_name, next_val_secom)
+            else:
+                next_val_normalized = next_val_secom
 
-            # 加入漂移 (故障情況)
+            # 加入漂移 (故障情況，在標準化尺度上)
             if drift and param_name in drift:
                 drift_amount = drift[param_name] * dt
-                next_val += drift_amount
+                next_val_normalized += drift_amount
 
-            # 獲取標準化後的範圍
+            # 限制在標準化範圍內
             if use_normalization:
                 sim_ranges = {
                     'cooling_flow': (0.0, 10.0),
@@ -229,14 +243,11 @@ class SECOMRealtimeGenerator:
                     'alignment_error': (-10.0, 10.0)
                 }
                 min_val, max_val = sim_ranges.get(param_name, (stats.min_val, stats.max_val))
-            else:
-                min_val, max_val = stats.min_val, stats.max_val
+                next_val_normalized = np.clip(next_val_normalized, min_val, max_val)
 
-            # 限制在合理範圍內
-            next_val = np.clip(next_val, min_val, max_val)
-
-            next_values[param_name] = next_val
-            self.current_values[param_name] = next_val
+            # 保存標準化後的值
+            self.current_values_normalized[param_name] = next_val_normalized
+            next_values[param_name] = next_val_normalized
 
         return next_values
 

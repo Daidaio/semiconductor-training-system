@@ -60,6 +60,11 @@ class CompetencyMetrics:
     priority_violations: int = 0  # 優先級錯誤次數
     prioritization_score: float = 0.0  # 優先級分數 (0-100)
 
+    # ===== 新增：理論知識能力 =====
+    theory_questions_asked: int = 0  # 詢問理論問題次數
+    theory_knowledge_score: float = 0.0  # 理論知識分數 (0-100)
+    learning_engagement: float = 0.0  # 學習參與度 (0-100)
+
     # 整體評分
     overall_score: float = 0.0  # 綜合評分 (0-100)
     proficiency_level: str = "Novice"  # "Novice"/"Advanced Beginner"/"Competent"/"Proficient"/"Expert"
@@ -75,6 +80,7 @@ class CompetencyAssessmentSystem:
         self.scenario_type: str = None
         self.expert_path: List[str] = []  # 專家操作路徑
         self.fault_root_cause: str = None  # 故障根因
+        self.qa_stats: Dict = {}  # QA Assistant 統計（理論知識）
 
     def start_scenario(self, scenario_type: str, fault_root_cause: str):
         """
@@ -164,7 +170,17 @@ class CompetencyAssessmentSystem:
         metrics.priority_violations = priority_metrics['violation_count']
         metrics.prioritization_score = priority_metrics['priority_score']
 
-        # === 6. 計算整體評分 ===
+        # === 6. 理論知識評估（新增）===
+        if self.qa_stats:
+            metrics.theory_questions_asked = self.qa_stats.get('theory_questions', 0)
+            metrics.theory_knowledge_score = self.qa_stats.get('knowledge_score', 0.0) * 10  # 轉為 0-100 尺度
+            # 學習參與度 = (理論問題數 / 總診斷步驟) * 100
+            if metrics.diagnosis_steps > 0:
+                metrics.learning_engagement = min(100, (metrics.theory_questions_asked / metrics.diagnosis_steps) * 100)
+            else:
+                metrics.learning_engagement = 0.0
+
+        # === 7. 計算整體評分 ===
         metrics.overall_score = self._compute_overall_score(metrics)
         metrics.proficiency_level = self._determine_proficiency_level(metrics.overall_score)
 
@@ -339,13 +355,14 @@ class CompetencyAssessmentSystem:
         }
 
     def _compute_overall_score(self, metrics: CompetencyMetrics) -> float:
-        """計算整體評分 (加權平均)"""
+        """計算整體評分 (加權平均，含理論知識)"""
         weights = {
-            'diagnostic': 0.30,  # 診斷能力權重 30%
-            'speed': 0.15,  # 決策速度權重 15%
-            'risk': 0.25,  # 風險意識權重 25%
-            'systems': 0.20,  # 系統性思維權重 20%
-            'priority': 0.10  # 優先級判斷權重 10%
+            'diagnostic': 0.25,  # 診斷能力權重 25%
+            'speed': 0.12,  # 決策速度權重 12%
+            'risk': 0.20,  # 風險意識權重 20%
+            'systems': 0.18,  # 系統性思維權重 18%
+            'priority': 0.10,  # 優先級判斷權重 10%
+            'theory': 0.15  # 理論知識權重 15% (NEW)
         }
 
         overall = (
@@ -353,7 +370,8 @@ class CompetencyAssessmentSystem:
             metrics.time_efficiency_score * weights['speed'] +
             metrics.risk_awareness_score * weights['risk'] +
             metrics.holistic_view_score * weights['systems'] +
-            metrics.prioritization_score * weights['priority']
+            metrics.prioritization_score * weights['priority'] +
+            metrics.theory_knowledge_score * weights['theory']
         )
 
         return round(overall, 2)
@@ -475,6 +493,13 @@ class CompetencyAssessmentSystem:
 
 **建議**: {'優先級判斷準確！' if metrics.priority_violations == 0 else '記住：安全 > 品質 > 產能的優先順序。'}
 
+### 6. 理論知識 ({metrics.theory_knowledge_score:.1f}/100) ⭐ 新增
+- 理論問題詢問: {metrics.theory_questions_asked} 次
+- 知識評分: {metrics.theory_knowledge_score:.1f}/100
+- 學習參與度: {metrics.learning_engagement:.1f}%
+
+**建議**: {'理論基礎扎實！' if metrics.theory_knowledge_score >= 70 else '建議多詢問「為什麼」，加深對原理的理解。'}
+
 ---
 
 ## 成長路徑
@@ -494,6 +519,20 @@ class CompetencyAssessmentSystem:
         report += growth_path.get(metrics.proficiency_level, "")
 
         return report
+
+    def update_theory_knowledge(self, qa_stats: Dict):
+        """
+        更新理論知識評估（從 QA Assistant 獲取）
+
+        Args:
+            qa_stats: QA Assistant 的統計資料
+                {
+                    'theory_questions': int,
+                    'knowledge_score': float (0-10),
+                    'total_interactions': int
+                }
+        """
+        self.qa_stats = qa_stats
 
 
 if __name__ == "__main__":

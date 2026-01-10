@@ -150,6 +150,7 @@ class LithographyEquipmentSensors:
         # SECOM 即時生成器 (NEW: 逐秒真實數據)
         self.secom_generator = None
         self.enable_secom_realtime = True
+        self.secom_drift = {}  # 故障漂移字典
 
         if secom_data_path and os.path.exists(secom_data_path):
             try:
@@ -282,9 +283,10 @@ class LithographyEquipmentSensors:
         """
         # 優先級: SECOM 即時生成 > 原始感測器
         if self.enable_secom_realtime and self.secom_generator:
-            # 使用 SECOM 生成器產生逐秒真實數據
+            # 使用 SECOM 生成器產生逐秒真實數據（包含故障漂移）
             raw_readings = self.secom_generator.generate_next_values(
                 dt=1.0,
+                drift=self.secom_drift if self.secom_drift else None,
                 use_normalization=True
             )
         else:
@@ -340,15 +342,30 @@ class LithographyEquipmentSensors:
             sensor.clear_fault()
             print(f"[Fault Cleared] {sensor_name}")
 
+        # 清除 SECOM 漂移
+        if sensor_name in self.secom_drift:
+            del self.secom_drift[sensor_name]
+
     def clear_all_faults(self):
         """清除所有故障"""
         for sensor in self.sensors.values():
             sensor.clear_fault()
 
+        # 清除所有 SECOM 漂移
+        self.secom_drift = {}
+
     def reset_all(self):
         """重置所有感測器"""
         for sensor in self.sensors.values():
             sensor.reset()
+
+        # 重置 SECOM 生成器
+        if self.secom_generator:
+            for param_name in self.secom_generator.param_stats.keys():
+                self.secom_generator.reset_to_normal(param_name)
+
+        # 清除所有漂移
+        self.secom_drift = {}
 
     # ==================== 常見故障情境 ====================
 
@@ -362,17 +379,18 @@ class LithographyEquipmentSensors:
         # 流量降低
         normal_flow = 5.0
         fault_flow = normal_flow * (1 - flow_reduction)
-        self.inject_fault("cooling_flow", "fixed", fault_flow)
-
-        # 溫度上升
-        self.inject_fault("lens_temp", "drift", 0.01)  # 每秒上升 0.01°C
 
         # 如果使用 SECOM 生成器，注入漂移
-        if self.secom_generator:
-            drift = self.secom_generator.inject_fault_drift(
-                'cooling_flow', fault_flow, duration=10.0
-            )
-            print(f"[SECOM] 冷卻流量將在 10 秒內降至 {fault_flow:.1f} L/min")
+        if self.enable_secom_realtime and self.secom_generator:
+            # 計算漂移速率（10秒過渡）
+            current_flow = self.secom_generator.current_values.get('cooling_flow', normal_flow)
+            drift_rate = (fault_flow - current_flow) / 10.0
+            self.secom_drift['cooling_flow'] = drift_rate
+            print(f"[SECOM] 冷卻流量將在 10 秒內從 {current_flow:.1f} 降至 {fault_flow:.1f} L/min")
+        else:
+            # 使用原始感測器
+            self.inject_fault("cooling_flow", "fixed", fault_flow)
+            self.inject_fault("lens_temp", "drift", 0.01)  # 每秒上升 0.01°C
 
         print(f"[Scenario] 冷卻系統故障: 流量降至 {fault_flow:.1f} L/min")
 

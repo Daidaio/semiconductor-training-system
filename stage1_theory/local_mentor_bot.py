@@ -130,7 +130,7 @@ class LocalMentorBot:
                         "num_predict": 150,  # 限制最大輸出長度，加快回應
                     }
                 },
-                timeout=15  # 降低 timeout 從 60 秒到 15 秒
+                timeout=90  # 增加 timeout 到 90 秒，避免複雜問題被中斷
             )
 
             if response.status_code == 200:

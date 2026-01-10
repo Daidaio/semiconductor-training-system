@@ -19,6 +19,7 @@ from core.ai_expert_advisor import AIExpertAdvisor
 from core.ai_scenario_mentor import AIScenarioMentor
 from core.digital_twin import LithographyDigitalTwin
 from core.closed_loop_control import ClosedLoopController
+from core.qa_assistant import TrainingAssistant
 from interface.equipment_visualizer_industrial import IndustrialEquipmentVisualizer
 import os
 
@@ -42,9 +43,19 @@ class SimulationTrainingSystem:
             self.ai_mentor = AIScenarioMentor(use_ai=True)
             self.ai_advisor = None  # 不使用舊版
             print("[OK] 使用 AI 情境學長模式")
+
+            # 理論知識問答助手（整合到 AI 學長）
+            # 使用 AI 學長的 ai_bot 作為 LLM handler
+            if self.ai_mentor.ai_bot:
+                self.qa_assistant = TrainingAssistant(self.ai_mentor.ai_bot)
+                print("[OK] 理論問答助手已整合（蘇格拉底式引導）")
+            else:
+                self.qa_assistant = None
+                print("[WARN] AI 不可用，理論問答助手未啟用")
         else:
             self.ai_advisor = AIExpertAdvisor()
             self.ai_mentor = None
+            self.qa_assistant = None
             print("[OK] 使用傳統專家顧問模式")
 
         # 設備視覺化器（使用真實照片模式）
@@ -73,6 +84,12 @@ class SimulationTrainingSystem:
 
         # 當前選中的部件（用於互動式視覺化）
         self.selected_component = None
+
+        # 訓練模式狀態（新增）
+        self.training_mode = "diagnostic"  # "diagnostic" / "learning" / "reflection"
+        self.pending_follow_up = None  # 待回答的反問問題
+        self.pending_theory_context = None  # 待反問的理論上下文（延遲生成反問）
+        self.scenario_completed = False  # 場景是否完成
 
         print("[OK] System ready!")
 
@@ -161,7 +178,7 @@ class SimulationTrainingSystem:
                           conversation_history: list,
                           action_log: str) -> Tuple[str, str, str, str, list, str]:
         """
-        處理學員輸入
+        處理學員輸入（智能模式切換）
 
         Returns:
             (user_input_cleared, equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log)
@@ -177,6 +194,21 @@ class SimulationTrainingSystem:
 
         # 記錄時間
         timestamp = datetime.now().strftime("%H:%M:%S")
+
+        # ===== 智能模式切換：檢測理論問題 =====
+        if self.qa_assistant and self.qa_assistant.is_theory_question(user_input):
+            # 切換到學習模式
+            return self._handle_theory_question(
+                user_input, timestamp, equipment_html, dashboard_html,
+                equipment_status_html, conversation_history, action_log
+            )
+
+        # ===== 檢查是否在回答反問問題 =====
+        if self.pending_follow_up:
+            return self._handle_follow_up_answer(
+                user_input, timestamp, equipment_html, dashboard_html,
+                equipment_status_html, conversation_history, action_log
+            )
 
         # 1. 先用規則快速檢查（特別是「請問學長」這類明確的句子）
         parsed_input = self.nlu_controller.parse_input(user_input)
@@ -365,6 +397,187 @@ class SimulationTrainingSystem:
 
         return expert_response
 
+    def _handle_theory_question(self, user_input: str, timestamp: str,
+                                equipment_html: str, dashboard_html: str,
+                                equipment_status_html: str,
+                                conversation_history: list,
+                                action_log: str) -> Tuple[str, str, str, str, list, str]:
+        """
+        處理理論問題（學習模式）
+
+        Returns:
+            (user_input_cleared, equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log)
+        """
+        # 切換模式
+        self.training_mode = "learning"
+
+        # ===== 問答期間故障持續演進 =====
+        # 獲取問答前的狀態
+        scenario_info = self.scenario_engine.get_scenario_info()
+        old_state = self.scenario_engine.get_current_state()
+        context = f"{scenario_info.get('fault_type', '')}故障場景"
+
+        # 生成回答（期間時間會流逝，故障會惡化）
+        result = self.qa_assistant.generate_answer(user_input, context)
+
+        # 更新場景狀態（模擬問答期間時間經過，約 20-30 秒）
+        update_info = self.scenario_engine.update_state(time_delta=25)
+
+        # 立即生成反問（用戶要求一次看到完整內容）
+        follow_up = self.qa_assistant.generate_follow_up(
+            user_input,
+            result['answer'],
+            context
+        )
+
+        # 再次更新場景狀態（反問生成期間又過了 20-30 秒）
+        update_info2 = self.scenario_engine.update_state(time_delta=25)
+
+        # 合併更新資訊
+        new_state = self.scenario_engine.get_current_state()
+
+        # 保存反問供後續評估使用
+        self.pending_follow_up = follow_up
+        self.pending_theory_context = None  # 清除延遲反問的暫存
+
+        # 更新視覺化（反映故障惡化）
+        equipment_html = self.equipment_visualizer.render(new_state)
+        dashboard_html = self.dashboard_generator.generate(
+            new_state, scenario_info, self.scenario_engine.time_elapsed
+        )
+        equipment_status_html = self.equipment_visualizer.render_status_indicators(new_state)
+
+        # 格式化回應（一次顯示回答 + 反問 + 故障警告）
+        response = f"""[學習模式 - 理論問答]
+
+{result['answer']}
+
+---
+[反問檢驗理解]
+{follow_up}
+
+（請回答以上問題，我會評估你的理解程度）"""
+
+        # 加入故障惡化提醒
+        if update_info.get('new_alarms') or update_info2.get('new_alarms'):
+            total_new_alarms = len(update_info.get('new_alarms', [])) + len(update_info2.get('new_alarms', []))
+            response += f"""
+
+⚠️ 注意：問答期間故障持續惡化，新增 {total_new_alarms} 個警報！"""
+
+        # 加入對話歷史
+        self.conversation_history.extend([
+            {"role": "user", "content": user_input},
+            {"role": "assistant", "content": response}
+        ])
+
+        # 更新日誌
+        action_log += f"\n[{timestamp}] [學習模式] 詢問理論: {user_input[:30]}... (期間經過約 50 秒，故障持續惡化)"
+
+        return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
+
+    def _generate_follow_up_question(self, user_input: str, timestamp: str,
+                                     equipment_html: str, dashboard_html: str,
+                                     equipment_status_html: str,
+                                     conversation_history: list,
+                                     action_log: str) -> Tuple[str, str, str, str, list, str]:
+        """
+        用戶確認理解後，生成反問問題
+
+        Returns:
+            (user_input_cleared, equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log)
+        """
+        # 使用暫存的上下文生成反問
+        ctx = self.pending_theory_context
+        follow_up = self.qa_assistant.generate_follow_up(
+            ctx['question'],
+            ctx['answer'],
+            ctx['scenario_context']
+        )
+
+        # 保存反問問題
+        self.pending_follow_up = follow_up
+        self.pending_theory_context = None  # 清除暫存
+
+        # 格式化回應
+        response = f"""[反問檢驗理解]
+
+{follow_up}
+
+（請回答以上問題，我會評估你的理解程度）"""
+
+        # 加入對話歷史
+        self.conversation_history.extend([
+            {"role": "user", "content": user_input},
+            {"role": "assistant", "content": response}
+        ])
+
+        return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
+
+    def _handle_follow_up_answer(self, user_input: str, timestamp: str,
+                                 equipment_html: str, dashboard_html: str,
+                                 equipment_status_html: str,
+                                 conversation_history: list,
+                                 action_log: str) -> Tuple[str, str, str, str, list, str]:
+        """
+        處理反問問題的回答
+
+        Returns:
+            (user_input_cleared, equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log)
+        """
+        # 評估回答
+        evaluation = self.qa_assistant.evaluate_response(
+            self.pending_follow_up,
+            user_input
+        )
+
+        # 格式化評估結果
+        feedback_emoji = {
+            'excellent': '🌟',
+            'good': '👍',
+            'fair': '💪',
+            'poor': '📚'
+        }
+
+        emoji = feedback_emoji.get(evaluation['understanding_level'], '')
+
+        response = f"""[評估結果] {emoji}
+
+分數：{evaluation['score']:.1f}/10
+{evaluation['feedback']}"""
+
+        # 加入建議回答（如果有的話）
+        if 'suggested_answer' in evaluation and evaluation['suggested_answer']:
+            response += f"""
+
+---
+[建議回答參考]
+{evaluation['suggested_answer']}"""
+
+        response += """
+
+---
+你現在可以：
+1. 繼續詢問理論問題
+2. 返回故障診斷
+
+（直接輸入診斷指令即可返回診斷模式）"""
+
+        # 清除待回答問題
+        self.pending_follow_up = None
+        self.training_mode = "diagnostic"
+
+        # 加入對話歷史
+        self.conversation_history.extend([
+            {"role": "user", "content": user_input},
+            {"role": "assistant", "content": response}
+        ])
+
+        # 更新日誌
+        action_log += f"\n[{timestamp}] [學習] 理解評分: {evaluation['score']:.1f}/10"
+
+        return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
+
     def _generate_response_message(self, action_result: Dict,
                                    update_info: Dict, new_state: Dict) -> str:
         """生成系統回應訊息"""
@@ -388,7 +601,7 @@ class SimulationTrainingSystem:
         return message
 
     def _generate_completion_message(self) -> str:
-        """生成完成訊息"""
+        """生成完成訊息（含反思問題）"""
         scenario_info = self.scenario_engine.get_scenario_info()
         evaluation = self.scenario_engine.evaluate_actions(self.action_history)
 
@@ -414,6 +627,34 @@ class SimulationTrainingSystem:
             )
 
         message += f"\n\n{final_review}"
+
+        # ===== 新增：場景後反思問題 =====
+        if self.qa_assistant:
+            scenario_summary = {
+                'fault_type': scenario_info.get('fault_type', '未知'),
+                'actions_taken': f"{len(self.action_history)} 個動作",
+                'time_taken': self.scenario_engine.time_elapsed,
+                'mistakes': len([a for a in self.action_history if not a.get('success', True)])
+            }
+
+            reflection_q = self.qa_assistant.generate_scenario_reflection(scenario_summary)
+
+            message += "\n\n" + "="*40
+            message += "\n[反思時間]"
+            message += f"\n\n{reflection_q}"
+            message += "\n\n（請回答以上反思問題，鞏固所學知識）"
+
+            # 保存反思問題
+            self.pending_follow_up = reflection_q
+            self.training_mode = "reflection"
+            self.scenario_completed = True
+
+            # 獲取理論知識分數
+            qa_stats = self.qa_assistant.get_stats()
+            if qa_stats['theory_questions'] > 0:
+                message += f"\n\n[學習統計]"
+                message += f"\n理論問題：{qa_stats['theory_questions']} 個"
+                message += f"\n知識評分：{qa_stats['knowledge_score']:.1f}/10"
 
         return message
 
@@ -828,7 +1069,7 @@ def create_simulation_interface(secom_data_path: str, use_ai_mentor: bool = True
         )
 
         # 定時器（用於自動演進）
-        timer = gr.Timer(value=10, active=False)  # 每10秒觸發一次
+        timer = gr.Timer(value=1, active=False)  # 每1秒觸發一次（逐秒更新）
 
         # 事件綁定
         def start_scenario(difficulty):
