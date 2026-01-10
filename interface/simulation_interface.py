@@ -156,7 +156,8 @@ class SimulationTrainingSystem:
                 fault_info={
                     'fault_type': scenario_info.get('fault_type', '未知故障'),
                     'root_cause': scenario_info.get('root_cause', 'unknown'),
-                    'severity': scenario_info.get('severity', 'medium')
+                    'severity': scenario_info.get('severity', 'medium'),
+                    'scenario_name': scenario_info.get('scenario_name', '')
                 },
                 current_state=scenario_info["initial_state"]
             )

@@ -45,7 +45,8 @@ class ProactiveMentor:
                 {
                     'fault_type': '冷卻流量下降',
                     'root_cause': 'cooling_flow',
-                    'severity': 'medium'
+                    'severity': 'medium',
+                    'scenario_name': 'cooling_system_failure' (可選)
                 }
             current_state: 當前設備狀態
 
@@ -54,6 +55,11 @@ class ProactiveMentor:
         """
         fault_type = fault_info.get('fault_type', '未知故障')
         root_cause = fault_info.get('root_cause', 'unknown')
+        scenario_name = fault_info.get('scenario_name', '')
+
+        # 如果沒有 root_cause，嘗試從 scenario_name 或 current_state 推斷
+        if root_cause == 'unknown' or not root_cause:
+            root_cause = self._infer_root_cause(scenario_name, current_state)
 
         # 根據故障類型生成告警
         alert_templates = {
@@ -76,6 +82,53 @@ class ProactiveMentor:
         }
 
         return alert_message
+
+    def _infer_root_cause(self, scenario_name: str, current_state: Dict) -> str:
+        """
+        從場景名稱或當前狀態推斷根本原因
+
+        Args:
+            scenario_name: 場景名稱
+            current_state: 當前狀態
+
+        Returns:
+            推斷的 root_cause
+        """
+        # 從場景名稱推斷
+        scenario_lower = scenario_name.lower()
+        if 'cooling' in scenario_lower or 'flow' in scenario_lower:
+            return 'cooling_flow'
+        elif 'vacuum' in scenario_lower or 'leak' in scenario_lower:
+            return 'vacuum_leak'
+        elif 'temp' in scenario_lower or 'thermal' in scenario_lower:
+            return 'temperature'
+        elif 'lens' in scenario_lower or 'optical' in scenario_lower or 'contamination' in scenario_lower:
+            return 'lens_contamination'
+        elif 'align' in scenario_lower:
+            return 'alignment'
+
+        # 從當前狀態推斷（檢查哪個參數異常）
+        cooling_flow = current_state.get('cooling_flow', 5.0)
+        vacuum = current_state.get('vacuum_pressure', 1e-6)
+        temp = current_state.get('lens_temp', 23.0)
+        light = current_state.get('light_intensity', 100.0)
+        align_x = current_state.get('alignment_error_x', 0)
+        align_y = current_state.get('alignment_error_y', 0)
+
+        # 判斷哪個參數偏離最嚴重
+        if abs(cooling_flow - 5.0) > 0.5:  # 冷卻流量異常
+            return 'cooling_flow'
+        elif vacuum > 2e-6:  # 真空度異常
+            return 'vacuum_leak'
+        elif abs(temp - 23.0) > 1.0:  # 溫度異常
+            return 'temperature'
+        elif light < 95.0:  # 光強異常
+            return 'lens_contamination'
+        elif abs(align_x) > 10 or abs(align_y) > 10:  # 對準異常
+            return 'alignment'
+
+        # 都沒有明顯異常，返回 unknown
+        return 'unknown'
 
     def _generate_cooling_alert(self, fault_info: Dict, state: Dict) -> str:
         """生成冷卻系統異常告警"""
