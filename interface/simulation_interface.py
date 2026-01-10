@@ -20,6 +20,7 @@ from core.ai_scenario_mentor import AIScenarioMentor
 from core.digital_twin import LithographyDigitalTwin
 from core.closed_loop_control import ClosedLoopController
 from core.qa_assistant import TrainingAssistant
+from core.proactive_mentor import ProactiveMentor
 from interface.equipment_visualizer_industrial import IndustrialEquipmentVisualizer
 import os
 
@@ -48,14 +49,18 @@ class SimulationTrainingSystem:
             # 使用 AI 學長的 ai_bot 作為 LLM handler
             if self.ai_mentor.ai_bot:
                 self.qa_assistant = TrainingAssistant(self.ai_mentor.ai_bot)
+                self.proactive_mentor = ProactiveMentor(self.ai_mentor.ai_bot)
                 print("[OK] 理論問答助手已整合（蘇格拉底式引導）")
+                print("[OK] 主動提示學長已整合（異常偵測後主動說明）")
             else:
                 self.qa_assistant = None
+                self.proactive_mentor = None
                 print("[WARN] AI 不可用，理論問答助手未啟用")
         else:
             self.ai_advisor = AIExpertAdvisor()
             self.ai_mentor = None
             self.qa_assistant = None
+            self.proactive_mentor = None
             print("[OK] 使用傳統專家顧問模式")
 
         # 設備視覺化器（使用真實照片模式）
@@ -144,8 +149,21 @@ class SimulationTrainingSystem:
         else:
             self.ai_advisor.reset()
 
-        # 生成警報訊息
-        alarm_message = scenario_info["alarm_message"]
+        # 生成警報訊息（使用主動提示學長）
+        if self.proactive_mentor:
+            # 使用主動提示學長生成詳細告警
+            proactive_alert = self.proactive_mentor.generate_fault_alert(
+                fault_info={
+                    'fault_type': scenario_info.get('fault_type', '未知故障'),
+                    'root_cause': scenario_info.get('root_cause', 'unknown'),
+                    'severity': scenario_info.get('severity', 'medium')
+                },
+                current_state=scenario_info["initial_state"]
+            )
+            alarm_message = proactive_alert
+        else:
+            # 使用原始告警訊息
+            alarm_message = scenario_info["alarm_message"]
 
         # 生成初始介面
         equipment_html = self._generate_equipment_diagram(scenario_info["initial_state"])
@@ -155,12 +173,13 @@ class SimulationTrainingSystem:
         # 初始系統訊息加入對話歷史
         initial_message = f"""{alarm_message}
 
-你是現場工程師，請用文字輸入你的操作！
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+你是現場工程師，請開始處理故障！
 
-範例輸入：
-- 「檢查冷卻水流量」或「冷卻水怎麼樣」
-- 「詢問學長流量正常嗎」
-- 「停機更換過濾網」或「先停一下，換過濾網」
+💬 你可以：
+  • 執行診斷動作：「檢查冷卻水流量」
+  • 詢問專業術語：「什麼是overlay？」「熱膨脹是什麼意思？」
+  • 請教學長：「學長，這個該怎麼處理？」
 
 請開始你的操作..."""
 
@@ -411,7 +430,32 @@ class SimulationTrainingSystem:
         # 切換模式
         self.training_mode = "learning"
 
-        # ===== 問答期間故障持續演進 =====
+        # ===== 優先檢查：是否在問主動告警中提到的專業術語 =====
+        if self.proactive_mentor:
+            is_term_question, term_answer = self.proactive_mentor.answer_followup_question(user_input)
+            if is_term_question and term_answer:
+                # 這是專業術語追問，直接回答（不消耗時間，不生成反問）
+                response = f"""[專業術語解釋]
+
+{term_answer}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 理解這個術語後，繼續處理故障吧！
+   你也可以繼續追問其他術語的意思。"""
+
+                # 加入對話歷史（不消耗時間）
+                self.conversation_history.extend([
+                    {"role": "user", "content": user_input},
+                    {"role": "assistant", "content": response}
+                ])
+
+                # 更新日誌（術語解釋不消耗時間）
+                action_log += f"\n[{timestamp}] [術語解釋] {user_input[:30]}... (即時回答，無時間消耗)"
+
+                # 不更新設備狀態，直接返回
+                return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
+
+        # ===== 一般理論問題：需要消耗時間 =====
         # 獲取問答前的狀態
         scenario_info = self.scenario_engine.get_scenario_info()
         old_state = self.scenario_engine.get_current_state()
