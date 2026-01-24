@@ -21,7 +21,7 @@ from core.digital_twin import LithographyDigitalTwin
 from core.closed_loop_control import ClosedLoopController
 from core.qa_assistant import TrainingAssistant
 from core.proactive_mentor import ProactiveMentor
-from interface.equipment_visualizer_industrial import IndustrialEquipmentVisualizer
+from interface.equipment_visualizer_asml_cutaway import ASMLCutawayVisualizer
 import os
 
 
@@ -63,9 +63,9 @@ class SimulationTrainingSystem:
             self.proactive_mentor = None
             print("[OK] 使用傳統專家顧問模式")
 
-        # 設備視覺化器（使用真實照片模式）
-        self.equipment_visualizer = IndustrialEquipmentVisualizer()
-        print("[OK] 真實照片視覺化器已載入 (ASML 設備大圖 + 故障標示)")
+        # 設備視覺化器（使用 ASML 官方剖面圖）
+        self.equipment_visualizer = ASMLCutawayVisualizer()
+        print("[OK] ASML 剖面圖視覺化器已載入 (官方剖面圖 + 異常區域亮紅燈)")
 
         # 閉環控制系統
         self.closed_loop = ClosedLoopController(
@@ -435,26 +435,77 @@ class SimulationTrainingSystem:
         if self.proactive_mentor:
             is_term_question, term_answer = self.proactive_mentor.answer_followup_question(user_input)
             if is_term_question and term_answer:
-                # 這是專業術語追問，直接回答（不消耗時間，不生成反問）
-                response = f"""[專業術語解釋]
+                # 這是專業術語追問，不直接給答案，先反問學員
+                # 從問題中提取術語名稱
+                term_name = self._extract_term_from_question(user_input)
 
-{term_answer}
+                # 儲存正確答案供後續評估使用
+                self.pending_term_answer = term_answer
+                self.pending_term_name = term_name
+
+                # 反問學員，引導思考
+                response = f"""[學長反問]
+
+🤔 你問的是「{term_name}」對吧？
+
+在我告訴你之前，我想先聽聽你的想法：
+**你覺得「{term_name}」是什麼意思？它在半導體製程中扮演什麼角色？**
+
+💡 提示：試著從字面上理解，或回想一下相關的物理現象。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 理解這個術語後，繼續處理故障吧！
-   你也可以繼續追問其他術語的意思。"""
+📝 請先回答你的理解，我會根據你的回答給予回饋！"""
 
-                # 加入對話歷史（不消耗時間）
+                # 加入對話歷史
                 self.conversation_history.extend([
                     {"role": "user", "content": user_input},
                     {"role": "assistant", "content": response}
                 ])
 
-                # 更新日誌（術語解釋不消耗時間）
-                action_log += f"\n[{timestamp}] [術語解釋] {user_input[:30]}... (即時回答，無時間消耗)"
+                # 更新日誌
+                action_log += f"\n[{timestamp}] [術語反問] {term_name} - 等待學員回答"
 
                 # 不更新設備狀態，直接返回
                 return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
+
+        # ===== 檢查：是否是對術語反問的回答 =====
+        if hasattr(self, 'pending_term_answer') and self.pending_term_answer:
+            # 學員正在回答術語問題，進行評估
+            term_answer = self.pending_term_answer
+            term_name = getattr(self, 'pending_term_name', '該術語')
+
+            # 評估學員的回答
+            evaluation = self._evaluate_term_understanding(user_input, term_name, term_answer)
+
+            # 清除暫存
+            self.pending_term_answer = None
+            self.pending_term_name = None
+
+            # 根據評估結果給予回饋
+            response = f"""[學長回饋]
+
+{evaluation['feedback']}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📚 **完整解釋：**
+
+{term_answer}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ 評分：{evaluation['score']}/10
+💡 理解這個術語後，繼續處理故障吧！"""
+
+            # 加入對話歷史
+            self.conversation_history.extend([
+                {"role": "user", "content": user_input},
+                {"role": "assistant", "content": response}
+            ])
+
+            # 更新日誌
+            action_log += f"\n[{timestamp}] [術語評估] {term_name} - 得分: {evaluation['score']}/10"
+
+            return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
 
         # ===== 一般理論問題：需要消耗時間 =====
         # 獲取問答前的狀態
@@ -520,6 +571,122 @@ class SimulationTrainingSystem:
         action_log += f"\n[{timestamp}] [學習模式] 詢問理論: {user_input[:30]}... (期間經過約 50 秒，故障持續惡化)"
 
         return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
+
+    def _extract_term_from_question(self, question: str) -> str:
+        """
+        從問題中提取術語名稱
+
+        Args:
+            question: 學員的問題
+
+        Returns:
+            術語名稱
+        """
+        # 常見的術語列表
+        terms = [
+            '熱膨脹', 'thermal expansion',
+            '疊對', 'overlay', 'overlay shift',
+            'CD', 'CD uniformity', '關鍵尺寸',
+            '曝光劑量', 'dose',
+            '對準', 'alignment',
+            '真空', 'vacuum',
+            '冷卻', 'cooling',
+            '光阻', 'photoresist',
+            '蝕刻', 'etching',
+            '薄膜', 'film'
+        ]
+
+        question_lower = question.lower()
+        for term in terms:
+            if term.lower() in question_lower:
+                return term
+
+        # 如果沒找到，嘗試提取引號中的內容
+        import re
+        quoted = re.findall(r'[「」『』\"\'](.*?)[「」『』\"\']', question)
+        if quoted:
+            return quoted[0]
+
+        # 預設返回問題的主要部分
+        return question.replace('是什麼', '').replace('是甚麼', '').replace('什麼是', '').strip()
+
+    def _evaluate_term_understanding(self, student_answer: str, term_name: str, correct_answer: str) -> Dict:
+        """
+        評估學員對術語的理解
+
+        Args:
+            student_answer: 學員的回答
+            term_name: 術語名稱
+            correct_answer: 正確答案
+
+        Returns:
+            評估結果 {'score': int, 'feedback': str}
+        """
+        student_answer_lower = student_answer.lower().strip()
+
+        # 關鍵概念檢查（根據不同術語）
+        key_concepts = {
+            '熱膨脹': ['溫度', '體積', '膨脹', '熱', '尺寸', '變大', '增加'],
+            'thermal expansion': ['temperature', 'volume', 'expand', 'heat', 'size', 'increase'],
+            '疊對': ['對準', '精度', '層', '偏移', '對齊'],
+            'overlay': ['align', 'layer', 'accuracy', 'shift', 'precision'],
+            'CD': ['線寬', '尺寸', '寬度', 'critical', 'dimension'],
+            '曝光劑量': ['能量', '光', '劑量', '曝光', 'energy'],
+        }
+
+        # 獲取該術語的關鍵概念
+        concepts = []
+        for key, values in key_concepts.items():
+            if key.lower() in term_name.lower():
+                concepts = values
+                break
+
+        # 如果沒有預定義概念，使用通用評估
+        if not concepts:
+            concepts = ['原理', '影響', '應用', '現象']
+
+        # 計算得分
+        matched_concepts = sum(1 for concept in concepts if concept.lower() in student_answer_lower)
+        total_concepts = len(concepts) if concepts else 1
+
+        # 計算得分（0-10）
+        base_score = min(10, int((matched_concepts / total_concepts) * 8))
+
+        # 檢查回答長度和品質
+        if len(student_answer) < 10:
+            base_score = max(0, base_score - 3)
+            feedback = f"⚠️ 你的回答太簡短了！\n\n"
+        elif len(student_answer) < 30:
+            base_score = max(0, base_score - 1)
+            feedback = f"📝 你有基本的理解，但可以更詳細一些。\n\n"
+        else:
+            feedback = ""
+
+        # 根據得分生成回饋
+        if base_score >= 8:
+            feedback += f"✅ 非常好！你對「{term_name}」的理解相當正確！\n"
+            feedback += f"你提到了關鍵概念，這是新人少見的理解深度。"
+        elif base_score >= 5:
+            feedback += f"👍 不錯！你對「{term_name}」有基本的認識。\n"
+            feedback += f"讓我補充一些你可能遺漏的部分。"
+        elif base_score >= 3:
+            feedback += f"🤔 你的理解方向大致正確，但還有些關鍵點沒抓到。\n"
+            feedback += f"讓我來詳細解釋「{term_name}」。"
+        else:
+            feedback += f"💡 看來你對「{term_name}」還不太熟悉，沒關係！\n"
+            feedback += f"這是一個重要的概念，讓我來詳細說明。"
+
+        # 加分項目
+        if '不確定' in student_answer or '不知道' in student_answer:
+            feedback = f"👏 很好！承認不確定是學習的第一步。\n讓我來幫你解釋「{term_name}」。"
+            base_score = max(base_score, 2)  # 至少給 2 分鼓勵誠實
+
+        return {
+            'score': base_score,
+            'feedback': feedback,
+            'matched_concepts': matched_concepts,
+            'total_concepts': total_concepts
+        }
 
     def _generate_follow_up_question(self, user_input: str, timestamp: str,
                                      equipment_html: str, dashboard_html: str,
