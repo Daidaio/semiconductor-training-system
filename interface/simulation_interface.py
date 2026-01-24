@@ -21,6 +21,7 @@ from core.digital_twin import LithographyDigitalTwin
 from core.closed_loop_control import ClosedLoopController
 from core.qa_assistant import TrainingAssistant
 from core.proactive_mentor import ProactiveMentor
+from core.adaptive_teaching_strategy import AdaptiveTeachingStrategy
 from interface.equipment_visualizer_asml_cutaway import ASMLCutawayVisualizer
 import os
 
@@ -50,17 +51,21 @@ class SimulationTrainingSystem:
             if self.ai_mentor.ai_bot:
                 self.qa_assistant = TrainingAssistant(self.ai_mentor.ai_bot)
                 self.proactive_mentor = ProactiveMentor(self.ai_mentor.ai_bot)
+                self.adaptive_strategy = AdaptiveTeachingStrategy(self.ai_mentor.ai_bot)
                 print("[OK] 理論問答助手已整合（蘇格拉底式引導）")
                 print("[OK] 主動提示學長已整合（異常偵測後主動說明）")
+                print("[OK] 自適應教學策略已載入（動態調整難度）")
             else:
                 self.qa_assistant = None
                 self.proactive_mentor = None
+                self.adaptive_strategy = None
                 print("[WARN] AI 不可用，理論問答助手未啟用")
         else:
             self.ai_advisor = AIExpertAdvisor()
             self.ai_mentor = None
             self.qa_assistant = None
             self.proactive_mentor = None
+            self.adaptive_strategy = None
             print("[OK] 使用傳統專家顧問模式")
 
         # 設備視覺化器（使用 ASML 官方剖面圖）
@@ -481,8 +486,16 @@ class SimulationTrainingSystem:
             self.pending_term_answer = None
             self.pending_term_name = None
 
-            # 根據評估結果給予回饋
-            response = f"""[學長回饋]
+            # 根據評估結果給予回饋（自適應模式）
+            teaching_mode = evaluation.get('teaching_mode', 'standard')
+            mode_label = {
+                'challenge': '🎯 挑戰模式',
+                'scaffolding': '🪜 鷹架引導',
+                'remedial': '📖 基礎鞏固',
+                'standard': '📚 標準模式'
+            }.get(teaching_mode, '📚 標準模式')
+
+            response = f"""[學長回饋] {mode_label}
 
 {evaluation['feedback']}
 
@@ -493,7 +506,7 @@ class SimulationTrainingSystem:
 {term_answer}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ 評分：{evaluation['score']}/10
+✅ 評分：{evaluation['score']}/10 | 教學模式：{mode_label}
 💡 理解這個術語後，繼續處理故障吧！"""
 
             # 加入對話歷史
@@ -502,8 +515,8 @@ class SimulationTrainingSystem:
                 {"role": "assistant", "content": response}
             ])
 
-            # 更新日誌
-            action_log += f"\n[{timestamp}] [術語評估] {term_name} - 得分: {evaluation['score']}/10"
+            # 更新日誌（包含自適應教學模式）
+            action_log += f"\n[{timestamp}] [術語評估] {term_name} - 得分: {evaluation['score']}/10 ({teaching_mode})"
 
             return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
 
@@ -612,7 +625,7 @@ class SimulationTrainingSystem:
 
     def _evaluate_term_understanding(self, student_answer: str, term_name: str, correct_answer: str) -> Dict:
         """
-        評估學員對術語的理解
+        評估學員對術語的理解（使用自適應教學策略）
 
         Args:
             student_answer: 學員的回答
@@ -620,18 +633,20 @@ class SimulationTrainingSystem:
             correct_answer: 正確答案
 
         Returns:
-            評估結果 {'score': int, 'feedback': str}
+            評估結果 {'score': int, 'feedback': str, 'teaching_mode': str, ...}
         """
         student_answer_lower = student_answer.lower().strip()
 
-        # 關鍵概念檢查（根據不同術語）
+        # ===== 基礎關鍵概念檢查 =====
         key_concepts = {
-            '熱膨脹': ['溫度', '體積', '膨脹', '熱', '尺寸', '變大', '增加'],
+            '熱膨脹': ['溫度', '體積', '膨脹', '熱', '尺寸', '變大', '增加', '金屬', '材料'],
             'thermal expansion': ['temperature', 'volume', 'expand', 'heat', 'size', 'increase'],
-            '疊對': ['對準', '精度', '層', '偏移', '對齊'],
+            '疊對': ['對準', '精度', '層', '偏移', '對齊', '重疊'],
             'overlay': ['align', 'layer', 'accuracy', 'shift', 'precision'],
-            'CD': ['線寬', '尺寸', '寬度', 'critical', 'dimension'],
-            '曝光劑量': ['能量', '光', '劑量', '曝光', 'energy'],
+            'CD': ['線寬', '尺寸', '寬度', 'critical', 'dimension', '關鍵'],
+            '曝光劑量': ['能量', '光', '劑量', '曝光', 'energy', '強度'],
+            '真空': ['壓力', '抽氣', '泵浦', '密封', '洩漏'],
+            '冷卻': ['溫度', '散熱', '流量', '循環', '控溫'],
         }
 
         # 獲取該術語的關鍵概念
@@ -641,51 +656,104 @@ class SimulationTrainingSystem:
                 concepts = values
                 break
 
-        # 如果沒有預定義概念，使用通用評估
         if not concepts:
-            concepts = ['原理', '影響', '應用', '現象']
+            concepts = ['原理', '影響', '應用', '現象', '作用']
 
-        # 計算得分
+        # 計算匹配概念數
         matched_concepts = sum(1 for concept in concepts if concept.lower() in student_answer_lower)
-        total_concepts = len(concepts) if concepts else 1
+        total_concepts = len(concepts)
 
-        # 計算得分（0-10）
+        # 計算基礎得分（0-10）
         base_score = min(10, int((matched_concepts / total_concepts) * 8))
 
-        # 檢查回答長度和品質
+        # 回答長度品質調整
         if len(student_answer) < 10:
             base_score = max(0, base_score - 3)
-            feedback = f"⚠️ 你的回答太簡短了！\n\n"
         elif len(student_answer) < 30:
             base_score = max(0, base_score - 1)
-            feedback = f"📝 你有基本的理解，但可以更詳細一些。\n\n"
-        else:
-            feedback = ""
+        elif len(student_answer) > 100:
+            base_score = min(10, base_score + 1)  # 詳細回答加分
 
-        # 根據得分生成回饋
-        if base_score >= 8:
-            feedback += f"✅ 非常好！你對「{term_name}」的理解相當正確！\n"
-            feedback += f"你提到了關鍵概念，這是新人少見的理解深度。"
-        elif base_score >= 5:
-            feedback += f"👍 不錯！你對「{term_name}」有基本的認識。\n"
-            feedback += f"讓我補充一些你可能遺漏的部分。"
-        elif base_score >= 3:
-            feedback += f"🤔 你的理解方向大致正確，但還有些關鍵點沒抓到。\n"
-            feedback += f"讓我來詳細解釋「{term_name}」。"
-        else:
-            feedback += f"💡 看來你對「{term_name}」還不太熟悉，沒關係！\n"
-            feedback += f"這是一個重要的概念，讓我來詳細說明。"
+        # 誠實回答加分
+        if '不確定' in student_answer or '不知道' in student_answer or '不太清楚' in student_answer:
+            base_score = max(base_score, 2)
 
-        # 加分項目
-        if '不確定' in student_answer or '不知道' in student_answer:
-            feedback = f"👏 很好！承認不確定是學習的第一步。\n讓我來幫你解釋「{term_name}」。"
-            base_score = max(base_score, 2)  # 至少給 2 分鼓勵誠實
+        # ===== 使用自適應教學策略（如果可用）=====
+        teaching_mode = 'standard'
+        suggested_actions = []
+        weak_topics = []
+
+        if self.adaptive_strategy:
+            # 決定理解程度
+            if base_score >= 8:
+                understanding_level = 'excellent'
+            elif base_score >= 6:
+                understanding_level = 'good'
+            elif base_score >= 4:
+                understanding_level = 'fair'
+            else:
+                understanding_level = 'poor'
+
+            # 呼叫自適應策略進行評估
+            adaptive_result = self.adaptive_strategy.evaluate_and_adapt(
+                question=f"什麼是{term_name}？",
+                system_answer=correct_answer,
+                trainee_answer=student_answer,
+                score=float(base_score),
+                understanding_level=understanding_level
+            )
+
+            teaching_mode = adaptive_result.get('teaching_mode', 'standard')
+            suggested_actions = adaptive_result.get('suggested_actions', [])
+            weak_topics = adaptive_result.get('weak_topics', [])
+
+        # ===== 根據教學模式生成自適應回饋 =====
+        if teaching_mode == 'challenge':
+            if base_score >= 8:
+                feedback = f"✅ 優秀！你對「{term_name}」的理解非常深入！\n"
+                feedback += f"作為進階挑戰，你能舉例說明這在實際製程中如何影響良率嗎？"
+            else:
+                feedback = f"👍 不錯的嘗試！讓我補充一些進階概念。"
+
+        elif teaching_mode == 'scaffolding':
+            feedback = f"📝 [鷹架引導]\n\n"
+            if base_score >= 5:
+                feedback += f"你對「{term_name}」有基本認識，讓我們一步步深入：\n"
+            else:
+                feedback += f"讓我們分解「{term_name}」這個概念：\n"
+            feedback += f"1️⃣ 首先理解基本定義\n"
+            feedback += f"2️⃣ 然後思考在半導體製程的影響\n"
+            feedback += f"3️⃣ 最後連結到故障診斷的應用"
+
+        elif teaching_mode == 'remedial':
+            feedback = f"💡 [基礎鞏固] 沒關係，這個概念需要時間理解。\n\n"
+            feedback += f"「{term_name}」是半導體製程的重要基礎，讓我用簡單的方式說明。"
+
+        else:  # standard
+            if base_score >= 8:
+                feedback = f"✅ 非常好！你對「{term_name}」的理解相當正確！\n"
+                feedback += f"你提到了關鍵概念，這是新人少見的理解深度。"
+            elif base_score >= 5:
+                feedback = f"👍 不錯！你對「{term_name}」有基本的認識。\n"
+                feedback += f"讓我補充一些你可能遺漏的部分。"
+            elif base_score >= 3:
+                feedback = f"🤔 你的理解方向大致正確，但還有些關鍵點沒抓到。\n"
+                feedback += f"讓我來詳細解釋「{term_name}」。"
+            else:
+                feedback = f"💡 看來你對「{term_name}」還不太熟悉，沒關係！\n"
+                feedback += f"這是一個重要的概念，讓我來詳細說明。"
+
+        # 添加建議行動（如果有）
+        if suggested_actions and len(suggested_actions) > 0:
+            feedback += f"\n\n📌 學習建議：{suggested_actions[0]}"
 
         return {
             'score': base_score,
             'feedback': feedback,
             'matched_concepts': matched_concepts,
-            'total_concepts': total_concepts
+            'total_concepts': total_concepts,
+            'teaching_mode': teaching_mode,
+            'weak_topics': weak_topics
         }
 
     def _generate_follow_up_question(self, user_input: str, timestamp: str,
