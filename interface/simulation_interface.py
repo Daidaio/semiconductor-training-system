@@ -25,6 +25,13 @@ from core.adaptive_teaching_strategy import AdaptiveTeachingStrategy
 from interface.equipment_visualizer_asml_cutaway import ASMLCutawayVisualizer
 import os
 
+# 3D 設備展示模組（選擇性載入）
+try:
+    from interface.equipment_viewer_3d import create_3d_viewer_tab
+    HAS_3D_VIEWER = True
+except Exception:
+    HAS_3D_VIEWER = False
+
 
 class SimulationTrainingSystem:
     """情境模擬訓練系統"""
@@ -1292,17 +1299,44 @@ def create_simulation_interface(secom_data_path: str, use_ai_mentor: bool = True
 
     system = SimulationTrainingSystem(secom_data_path, use_ai_mentor=use_ai_mentor)
 
+    # GLB 3D 模型（base64 嵌入，無需 file serving，無 CORS 問題）
+    import base64, html as _html
+    static_dir = Path(__file__).parent.parent / "static"
+    glb_src = static_dir / "asml_duv.glb"
+    glb_exists = glb_src.exists()
+
+    viewer_html = None
+    if glb_exists:
+        with open(str(glb_src), "rb") as _f:
+            _glb_b64 = base64.b64encode(_f.read()).decode("ascii")
+        print(f"[OK] GLB 已讀取並編碼 ({len(_glb_b64)//1024} KB base64)")
+        _srcdoc = (
+            "<!DOCTYPE html><html><head>"
+            "<meta charset=\"utf-8\">"
+            "<script type=\"module\" src=\"https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js\"></script>"
+            "<style>body{margin:0;background:#1a1a2e;overflow:hidden;}"
+            "model-viewer{width:100%;height:460px;--progress-bar-color:#4a9eff;}</style>"
+            "</head><body>"
+            f"<model-viewer src=\"data:model/gltf-binary;base64,{_glb_b64}\""
+            " alt=\"ASML TWINSCAN NXT:870\" auto-rotate camera-controls"
+            " shadow-intensity=\"1\" environment-image=\"neutral\" exposure=\"0.8\">"
+            "</model-viewer></body></html>"
+        )
+        viewer_html = (
+            f'<iframe srcdoc="{_html.escape(_srcdoc)}"'
+            ' style="width:100%;height:460px;border:none;border-radius:8px;"'
+            ' sandbox="allow-scripts"></iframe>'
+        )
+    else:
+        print("[WARN] asml_duv.glb 未找到")
+
     with gr.Blocks(title="Simulation Training System") as demo:
 
         gr.Markdown("""
         # 半導體設備故障處理模擬訓練系統
         ## Free-Form Natural Language Simulation
 
-        這是真實情境模擬，不是選擇題！
-        - 用自然語言輸入你的操作
-        - 系統會模擬真實反應
-        - 故障會隨時間演進
-        - AI 專家只在你詢問時出現
+        這是真實情境模擬，不是選擇題！用自然語言輸入操作，AI 學長引導思考。
         """)
 
         # 控制區
@@ -1314,23 +1348,29 @@ def create_simulation_interface(secom_data_path: str, use_ai_mentor: bool = True
             )
             start_btn = gr.Button("開始新情境", variant="primary", size="lg")
 
-        # 上半部：設備圖 + 參數儀表 + 設備狀態
+        # 上半部：3D 模型（左）+ 參數儀表 + 設備狀態（右）
         with gr.Row():
-            with gr.Column(scale=1):
-                equipment_display = gr.HTML(label="設備狀態", elem_id="equipment_display")
+            with gr.Column(scale=3):
+                if viewer_html:
+                    gr.HTML(value=viewer_html, label="ASML TWINSCAN NXT:870")
+                else:
+                    gr.Markdown("⚠️ **3D 模型未找到**，請確認 `static/asml_duv.glb` 存在。")
 
-            with gr.Column(scale=1):
+            with gr.Column(scale=2):
                 dashboard_display = gr.HTML(label="參數監控")
                 equipment_status_display = gr.HTML(label="設備檢查")
 
-        # 系統訊息區（使用 Chatbot 以更好顯示對話歷史）
+        # 內部用的設備圖（隱藏，供狀態機使用）
+        equipment_display = gr.HTML(visible=False)
+
+        # 系統訊息區
         system_messages = gr.Chatbot(
             label="對話歷史",
             height=400,
             show_label=True
         )
 
-        # 輸入區（大文字框）
+        # 輸入區
         with gr.Row():
             user_input = gr.Textbox(
                 label="",

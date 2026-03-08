@@ -67,8 +67,10 @@ print("Open your browser and start training!")
 print("Press Ctrl+C to stop")
 print()
 
+static_dir = str(Path(__file__).parent / "static")
 demo.launch(
     server_name="127.0.0.1",
     server_port=None,
-    share=False
+    share=False,
+    allowed_paths=[static_dir]
 )

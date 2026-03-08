@@ -23,6 +23,13 @@ from core.natural_language_controller import NaturalLanguageController, ActionEx
 from core.digital_twin import LithographyDigitalTwin
 import os
 
+# 3D 設備展示模組（選擇性載入）
+try:
+    from interface.equipment_viewer_3d import create_3d_viewer_tab
+    HAS_3D_VIEWER = True
+except Exception:
+    HAS_3D_VIEWER = False
+
 
 class UnifiedTrainingSystem:
     """統一訓練系統 - 整合階段1和階段2"""
@@ -826,6 +833,10 @@ def create_unified_interface(secom_data_path: str):
 
                 generate_report_btn = gr.Button("生成最新報告", variant="primary")
                 report_display = gr.Markdown()
+
+            # Tab 4: 3D 設備展示
+            if HAS_3D_VIEWER:
+                create_3d_viewer_tab()
 
         # ===== 事件綁定 =====
 
