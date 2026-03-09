@@ -4,10 +4,12 @@ Virtual Fab 第一人稱遊戲介面（完整版）
 - PointerLockControls WASD 第一人稱移動
 - E 鍵點選部件 → AI 學長即時回應
 - 右側常駐 AI 學長對話面板
-- 純 Python REST API（不需要 Gradio）
+- 左側 HMI 虛擬螢幕（canvas texture）可互動
+- /api/hmi 回傳即時感測器數值 + SECOM 異常指標
 """
 
 import json
+import random
 import threading
 import functools
 import http.server
@@ -29,13 +31,138 @@ _session = {
     "started": False,
     "eq": "", "dash": "", "eq_st": "", "msgs": [], "log": "",
 }
+_captured_state: dict = {}
+_hmi_cache: dict = {}
 
 _server_port: int = 0
+
+# ── SECOM 特徵映射（真實 feature index → sigma 偏差）────────────────────────
+_SECOM_FEATURES = {
+    "cooling":   [(10, -2.73), (89, -3.12), (156, -2.45), (201, -1.95), (267, -1.62)],
+    "lens":      [(50, +3.21), (156, +2.87), (267, +1.73), (301, +2.15), (400, +1.58)],
+    "laser":     [(150, -2.45), (267, -3.05), (89, +1.82), (350, -2.10), (178, -1.77)],
+    "stage":     [(200, +2.63), (201, +2.41), (350, +1.95), (400, +1.63), (99, +1.44)],
+    "alignment": [(300, -1.87), (156, -2.21), (89, -1.55)],
+    "handler":   [(250, +2.10), (301, +1.75), (178, +1.38)],
+}
+_SCENARIO_TO_SECOM = {
+    "cooling": "cooling", "lens": "lens", "light_source": "laser",
+    "laser":   "laser",   "wafer_stage": "stage", "alignment": "alignment",
+    "handler": "handler",
+}
+
+# ── HMI 資料建立 ──────────────────────────────────────────────────────────────
+
+def _build_hmi_data(state: dict) -> None:
+    """從 state dict 生成結構化 HMI 資料（供 /api/hmi 使用）"""
+    global _hmi_cache, _captured_state
+    _captured_state = state
+    if not state or not _system_instance:
+        return
+
+    # 子系統狀態
+    try:
+        viz = _system_instance.equipment_visualizer
+        sys_st = viz._calculate_all_status(state)
+    except Exception:
+        sys_st = {}
+
+    # ── 警報 ──────────────────────────────────────────────────────────────────
+    _ALARM_MAP = {
+        "cooling_system":   ("CLG", "冷卻系統"),
+        "lens_system":      ("OPT", "投影鏡組"),
+        "light_source":     ("LSR", "光源系統"),
+        "wafer_stage":      ("STG", "晶圓載台"),
+        "alignment_system": ("ALN", "對準系統"),
+        "reticle_stage":    ("RTC", "光罩載台"),
+        "wafer_handler":    ("HDL", "晶圓傳送"),
+        "control_panel":    ("CTL", "控制系統"),
+    }
+    alarms = []
+    for sid, (code, label) in _ALARM_MAP.items():
+        s = sys_st.get(sid, {})
+        sev = s.get("severity", "normal")
+        msg = s.get("message", "正常")
+        if sev in ("warning", "critical"):
+            alarms.append({"level": sev, "code": f"ALM-{code}",
+                           "system": label, "msg": msg})
+
+    # ── 感測器 ────────────────────────────────────────────────────────────────
+    # (label, key, unit, normal, warn_thresh, crit_thresh, lower_is_bad)
+    SENSORS = [
+        ("冷卻水流量",   "cooling_flow",        "L/min",  5.0, 4.5, 4.0,  True),
+        ("投影鏡組溫度", "lens_temp",           "°C",    23.0,24.0,26.0, False),
+        ("光源強度",    "light_intensity",      "%",    100.0,92.0,85.0,  True),
+        ("載台位置X",   "stage_position_x",    "μm",    None,None,None,  None),
+        ("載台位置Y",   "stage_position_y",    "μm",    None,None,None,  None),
+        ("真空壓力",    "vacuum_pressure",     "Torr",  None,None,None,  None),
+        ("過濾器壓差",  "filter_pressure_drop","Pa",    None,None,None,  None),
+    ]
+    sensors = []
+    for label, key, unit, norm, warn, crit, low_bad in SENSORS:
+        val = state.get(key)
+        if val is None:
+            continue
+        status = "normal"
+        if warn is not None:
+            if low_bad:
+                status = "critical" if val < crit else "warning" if val < warn else "normal"
+            else:
+                status = "critical" if val > crit else "warning" if val > warn else "normal"
+        dev = ""
+        if norm is not None:
+            diff = float(val) - norm
+            dev = f"{'+' if diff >= 0 else ''}{diff:.2f} {unit}"
+        sensors.append({
+            "label": label, "value": round(float(val), 3),
+            "unit": unit, "status": status,
+            "normal": f"{norm} {unit}" if norm else "-",
+            "dev": dev,
+        })
+
+    # ── SECOM 異常指標 ────────────────────────────────────────────────────────
+    scenario_type = state.get("scenario_type", "")
+    secom_key = next((v for k, v in _SCENARIO_TO_SECOM.items()
+                      if k in scenario_type.lower()), None)
+    secom = []
+    used_ids = set()
+    if secom_key and secom_key in _SECOM_FEATURES:
+        for fid, sigma in _SECOM_FEATURES[secom_key]:
+            noisy = sigma + random.uniform(-0.12, 0.12)
+            sev = "critical" if abs(noisy) > 2.5 else \
+                  "warning"  if abs(noisy) > 1.5 else "normal"
+            secom.append({"feature": f"Feature_{fid:03d}",
+                          "sigma": round(noisy, 2), "severity": sev})
+            used_ids.add(fid)
+    # 補充正常 feature 作背景參考
+    pool = [i for i in range(1, 591) if i not in used_ids]
+    for fid in random.sample(pool, min(4, len(pool))):
+        secom.append({"feature": f"Feature_{fid:03d}",
+                      "sigma": round(random.uniform(-0.7, 0.7), 2),
+                      "severity": "normal"})
+    secom.sort(key=lambda x: abs(x["sigma"]), reverse=True)
+    secom = secom[:8]
+
+    # ── canvas texture 用的顏色陣列 ───────────────────────────────────────────
+    SYS_ORDER = ["cooling_system", "light_source", "lens_system", "wafer_stage",
+                 "alignment_system", "reticle_stage", "wafer_handler", "control_panel"]
+    _COL = {"normal": "#44cc88", "warning": "#ffaa00", "critical": "#ff4444"}
+    sys_colors = [_COL.get(sys_st.get(sid, {}).get("severity", "normal"), "#44cc88")
+                  for sid in SYS_ORDER]
+
+    _hmi_cache = {
+        "scenario_name": state.get("scenario_name", ""),
+        "scenario_type": scenario_type,
+        "alarms":     alarms,
+        "sensors":    sensors,
+        "secom":      secom,
+        "sys_colors": sys_colors,
+    }
+
 
 # ── REST API + 靜態檔案 HTTP Handler ─────────────────────────────────────────
 
 class _GameHandler(http.server.SimpleHTTPRequestHandler):
-    """靜態檔案 + REST API 合一"""
 
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -44,31 +171,22 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_OPTIONS(self):
-        self.send_response(200)
-        self.end_headers()
+        self.send_response(200); self.end_headers()
 
     def do_GET(self):
-        if self.path == "/api/status":
-            self._api_status()
-        elif self.path == "/api/tick":
-            self._api_tick()
-        else:
-            super().do_GET()
+        if   self.path == "/api/status": self._api_status()
+        elif self.path == "/api/tick":   self._api_tick()
+        elif self.path == "/api/hmi":    self._api_hmi()
+        else: super().do_GET()
 
     def do_POST(self):
-        if self.path == "/api/start":
-            self._api_start()
-        elif self.path == "/api/chat":
-            self._api_chat()
-        else:
-            self.send_response(404)
-            self.end_headers()
+        if   self.path == "/api/start": self._api_start()
+        elif self.path == "/api/chat":  self._api_chat()
+        else: self.send_response(404); self.end_headers()
 
-    def log_message(self, *a):
-        pass  # 靜音 access log
+    def log_message(self, *a): pass
 
     # ── helpers ──────────────────────────────────────────────────────────────
-
     def _read_json(self):
         n = int(self.headers.get("Content-Length", 0))
         return json.loads(self.rfile.read(n).decode("utf-8")) if n else {}
@@ -82,7 +200,6 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def _msgs_to_list(self, msgs):
-        """Gradio Chatbot [[user,ai],...] → [{role,content},...] 列表"""
         out = []
         for m in (msgs or []):
             if isinstance(m, (list, tuple)) and len(m) >= 2:
@@ -101,42 +218,39 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
         return ""
 
     # ── API endpoints ─────────────────────────────────────────────────────────
-
     def _api_status(self):
         with _session_lock:
-            self._json({
-                "started": _session["started"],
-                "msgs": self._msgs_to_list(_session["msgs"]),
-            })
+            self._json({"started": _session["started"],
+                        "msgs": self._msgs_to_list(_session["msgs"])})
 
     def _api_tick(self):
         with _session_lock:
             if not _session["started"]:
-                self._json({"ok": False, "ai_msg": ""})
-                return
+                self._json({"ok": False, "ai_msg": ""}); return
             snap = dict(_session)
-
         eq, dash, eq_st, msgs, log = _system_instance.auto_progress(
             snap["eq"], snap["dash"], snap["eq_st"], snap["msgs"], snap["log"])
-
         with _session_lock:
             _session.update(eq=eq, dash=dash, eq_st=eq_st, msgs=msgs, log=log)
-
-        ai_msg = self._latest_ai(msgs)
-        self._json({"ok": True, "ai_msg": ai_msg,
+        self._json({"ok": True, "ai_msg": self._latest_ai(msgs),
                     "msgs": self._msgs_to_list(msgs)})
+
+    def _api_hmi(self):
+        if not _hmi_cache:
+            self._json({"started": False, "alarms": [], "sensors": [],
+                        "secom": [], "sys_colors": []})
+        else:
+            self._json(_hmi_cache)
 
     def _api_start(self):
         data = self._read_json()
         difficulty = data.get("difficulty", "medium")
         eq, dash, eq_st, msgs, log = _system_instance.start_new_scenario(difficulty)
-
         with _session_lock:
             _session.update(started=True, eq=eq, dash=dash,
                             eq_st=eq_st, msgs=msgs, log=log)
-
-        ai_msg = self._latest_ai(msgs) or "情境已開始，請開始檢查設備。"
-        self._json({"ok": True, "ai_msg": ai_msg,
+        self._json({"ok": True,
+                    "ai_msg": self._latest_ai(msgs) or "情境已開始，請開始檢查設備。",
                     "msgs": self._msgs_to_list(msgs)})
 
     def _api_chat(self):
@@ -144,19 +258,14 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
         text = data.get("text", "").strip()
         if not text:
             self._json({"ok": False, "ai_msg": ""}); return
-
         with _session_lock:
             snap = dict(_session)
-
         _, eq, dash, eq_st, msgs, log = _system_instance.process_user_input(
             text, snap["eq"], snap["dash"], snap["eq_st"],
             snap["msgs"], snap["log"])
-
         with _session_lock:
             _session.update(eq=eq, dash=dash, eq_st=eq_st, msgs=msgs, log=log)
-
-        ai_msg = self._latest_ai(msgs)
-        self._json({"ok": True, "ai_msg": ai_msg,
+        self._json({"ok": True, "ai_msg": self._latest_ai(msgs),
                     "msgs": self._msgs_to_list(msgs)})
 
 
@@ -179,36 +288,35 @@ def _start_server(directory: str, port: int = 8765) -> int:
     raise RuntimeError("No available port")
 
 
-# ── viewer.html（嵌入式遊戲）────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# viewer.html — 完整第一人稱遊戲
+# ══════════════════════════════════════════════════════════════════════════════
 
 _VIEWER_HTML = """\
 <!DOCTYPE html>
 <html><head><meta charset="utf-8">
-<title>ASML Virtual Fab — Operator Training</title>
+<title>ASML Virtual Fab</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{width:100%;height:100%;overflow:hidden;background:#050d1a;
   font-family:Consolas,"Courier New",monospace;color:#cde;}
-/* Three.js canvas — full viewport minus chat panel */
 canvas{position:fixed;top:0;left:0;display:block;}
 
 /* ── Loading ── */
 #loading-screen{position:fixed;inset:0;background:#050d1a;z-index:900;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;}
-#load-title{font-size:16px;letter-spacing:3px;color:#4af;}
 #load-pct{font-size:32px;color:#ffa500;}
 .bar-wrap{width:280px;height:6px;background:#0a1828;border-radius:3px;}
 #load-bar{height:6px;background:linear-gradient(90deg,#4af,#ffa500);
-  border-radius:3px;width:0;transition:width .3s;}
-#load-sub{font-size:11px;color:#5a8a9a;}
+  border-radius:3px;width:0;transition:width .25s;}
 
 /* ── Start Screen ── */
 #start-screen{position:fixed;top:0;left:0;z-index:800;display:none;
-  flex-direction:column;align-items:center;justify-content:center;
-  gap:22px;background:rgba(5,13,26,.94);}
-#start-screen h1{font-size:21px;letter-spacing:3px;color:#4af;text-align:center;}
-#start-screen h2{font-size:12px;color:#6ab;letter-spacing:2px;text-align:center;}
-.hint{font-size:11px;color:#5a8a9a;text-align:center;line-height:2;max-width:420px;}
+  flex-direction:column;align-items:center;justify-content:center;gap:22px;
+  background:rgba(5,13,26,.94);}
+#start-screen h1{font-size:20px;letter-spacing:3px;color:#4af;text-align:center;}
+#start-screen h2{font-size:11px;color:#6ab;letter-spacing:2px;text-align:center;}
+.hint{font-size:11px;color:#5a8a9a;text-align:center;line-height:2.1;max-width:440px;}
 .hint b{color:#ffa500;}
 #diff-row{display:flex;align-items:center;gap:12px;}
 #difficulty{background:#0a1828;border:1px solid #2a5a9c;color:#4af;
@@ -220,8 +328,7 @@ canvas{position:fixed;top:0;left:0;display:block;}
 
 /* ── HUD ── */
 #hud{position:fixed;top:10px;left:10px;display:none;flex-direction:column;gap:6px;z-index:200;}
-.hud-box{background:rgba(0,6,18,.84);border:1px solid #1a3a5c;
-  border-radius:8px;padding:7px 13px;}
+.hud-box{background:rgba(0,6,18,.84);border:1px solid #1a3a5c;border-radius:8px;padding:7px 13px;}
 .sys-row{display:flex;flex-wrap:wrap;gap:8px;}
 .si{display:flex;align-items:center;gap:4px;font-size:10px;color:#8ab;}
 .dot{width:7px;height:7px;border-radius:50%;}
@@ -231,28 +338,25 @@ canvas{position:fixed;top:0;left:0;display:block;}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
 
 /* ── Crosshair ── */
-#xhair{position:fixed;display:none;pointer-events:none;z-index:200;}
+#xhair{position:fixed;display:none;pointer-events:none;z-index:200;width:24px;height:24px;}
 #xhair::before,#xhair::after{content:'';position:absolute;background:rgba(255,165,0,.75);}
 #xhair::before{width:2px;height:22px;left:50%;transform:translateX(-50%);}
 #xhair::after{width:22px;height:2px;top:50%;transform:translateY(-50%);}
 #xhair.hit::before,#xhair.hit::after{background:#ffa500;box-shadow:0 0 7px #ffa500;}
 
-/* ── Inspect Prompt ── */
-#prompt{position:fixed;bottom:100px;display:none;
-  transform:translateX(-50%);z-index:200;
-  background:rgba(0,6,18,.88);border:1px solid #ffa50088;
-  border-radius:8px;padding:8px 22px;color:#ffa500;
-  font-size:13px;letter-spacing:1px;white-space:nowrap;
+/* ── Interaction Prompt ── */
+#prompt{position:fixed;bottom:110px;display:none;transform:translateX(-50%);z-index:200;
+  background:rgba(0,6,18,.9);border:1px solid #ffa50088;border-radius:8px;
+  padding:8px 22px;color:#ffa500;font-size:13px;letter-spacing:1px;white-space:nowrap;
   animation:pb 2s infinite;}
 @keyframes pb{0%,100%{border-color:#ffa50044}50%{border-color:#ffa500cc}}
 
-/* ── Inspect Panel (slides in from left on E) ── */
+/* ── Inspect Panel ── */
 #inspect-panel{position:fixed;top:50%;left:0;transform:translateY(-50%);
-  width:260px;display:none;flex-direction:column;z-index:300;
-  background:rgba(5,13,26,.96);border:1px solid #1a4a7c;border-left:none;
+  width:270px;display:none;flex-direction:column;z-index:300;
+  background:rgba(5,13,26,.97);border:1px solid #1a4a7c;border-left:none;
   border-radius:0 12px 12px 0;padding:16px;}
-#inspect-title{color:#ffa500;font-size:13px;font-weight:bold;margin-bottom:8px;
-  letter-spacing:1px;}
+#inspect-title{color:#ffa500;font-size:13px;font-weight:bold;margin-bottom:8px;letter-spacing:1px;}
 #inspect-desc{color:#8ab;font-size:11px;line-height:1.7;margin-bottom:12px;}
 .qbtn{background:rgba(10,24,40,.9);border:1px solid #2a5a9c;color:#4af;
   padding:7px 12px;border-radius:6px;font:11px Consolas,monospace;
@@ -261,34 +365,32 @@ canvas{position:fixed;top:0;left:0;display:block;}
 #inspect-close{color:#5a8a9a;font-size:10px;margin-top:6px;cursor:pointer;text-align:center;}
 #inspect-close:hover{color:#4af;}
 
-/* ── Controls bar ── */
+/* ── Controls Bar ── */
 #ctrl-bar{position:fixed;bottom:8px;display:none;transform:translateX(-50%);
   background:rgba(0,6,18,.75);border:1px solid #1a3a5c;border-radius:6px;
   padding:5px 18px;color:#4a7a9a;font-size:10px;letter-spacing:.5px;z-index:200;}
 
-/* ── Pause screen ── */
-#pause{position:fixed;top:0;left:0;z-index:700;display:none;
-  flex-direction:column;align-items:center;justify-content:center;
-  gap:18px;background:rgba(0,0,0,.65);}
+/* ── Pause ── */
+#pause{position:fixed;top:0;left:0;z-index:700;display:none;flex-direction:column;
+  align-items:center;justify-content:center;gap:18px;background:rgba(0,0,0,.65);}
 #pause h2{font-size:18px;letter-spacing:3px;color:#4af;}
 .pbtn{background:rgba(10,24,40,.9);border:1px solid #2a5a9c;color:#4af;
   padding:10px 32px;border-radius:6px;font:13px Consolas,monospace;
   cursor:pointer;letter-spacing:1px;transition:.2s;}
 .pbtn:hover{border-color:#4af;color:#fff;}
 
-/* ── Chat Panel (right sidebar — always visible) ── */
+/* ── Chat Panel ── */
 #chat-panel{position:fixed;top:0;right:0;width:300px;height:100vh;
   background:linear-gradient(180deg,#060e1c,#050d1a);
   border-left:1px solid #1a3a5c;display:flex;flex-direction:column;z-index:250;}
 #chat-hdr{background:linear-gradient(135deg,#0d1b2a,#0a1528);
-  border-bottom:1px solid #1a4a7c;padding:12px 14px;
-  color:#4af;font-size:12px;font-weight:bold;letter-spacing:1.5px;
+  border-bottom:1px solid #1a4a7c;padding:12px 14px;color:#4af;
+  font-size:12px;font-weight:bold;letter-spacing:1.5px;
   display:flex;align-items:center;gap:8px;flex-shrink:0;}
 .alive{width:8px;height:8px;border-radius:50%;background:#4f4;
   box-shadow:0 0 6px #4f4;animation:pg 2s infinite;}
 @keyframes pg{0%,100%{opacity:1}50%{opacity:.4}}
-#chat-msgs{flex:1;overflow-y:auto;padding:10px;
-  display:flex;flex-direction:column;gap:8px;}
+#chat-msgs{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;}
 #chat-msgs::-webkit-scrollbar{width:4px;}
 #chat-msgs::-webkit-scrollbar-thumb{background:#1a3a5c;border-radius:2px;}
 .msg{border-radius:8px;padding:8px 10px;font-size:11px;line-height:1.65;}
@@ -298,17 +400,55 @@ canvas{position:fixed;top:0;left:0;display:block;}
   border:1px solid #3a1a5c;}
 .ms{background:rgba(255,165,0,.07);color:#ffa500;
   border:1px solid rgba(255,165,0,.2);font-size:10px;text-align:center;}
-#chat-input-row{border-top:1px solid #1a3a5c;padding:10px;
-  display:flex;gap:8px;flex-shrink:0;}
+#chat-input-row{border-top:1px solid #1a3a5c;padding:10px;display:flex;gap:8px;flex-shrink:0;}
 #ci{flex:1;background:#0a1220;border:1px solid #2a4a6b;color:#a0d0ff;
   padding:8px 10px;border-radius:6px;font:11px Consolas,monospace;outline:none;}
 #ci:focus{border-color:#4af;}
-#cs{background:linear-gradient(135deg,#0d2a4a,#1a4a7c);
-  border:1px solid #4af;color:#4af;padding:8px 14px;border-radius:6px;
-  font:11px Consolas,monospace;cursor:pointer;flex-shrink:0;transition:.2s;}
+#cs{background:linear-gradient(135deg,#0d2a4a,#1a4a7c);border:1px solid #4af;color:#4af;
+  padding:8px 14px;border-radius:6px;font:11px Consolas,monospace;
+  cursor:pointer;flex-shrink:0;transition:.2s;}
 #cs:hover{color:#fff;background:#1a3a5c;}
 #chat-hint{padding:5px 10px;font-size:10px;color:#3a5a7c;
   text-align:center;flex-shrink:0;border-top:1px solid #0d1b2a;}
+
+/* ── HMI Overlay ── */
+#hmi-overlay{position:fixed;top:0;left:0;z-index:600;display:none;
+  align-items:center;justify-content:center;background:rgba(0,0,0,.75);}
+#hmi-modal{background:linear-gradient(180deg,#070f1e,#050d1a);
+  border:1px solid #1a4a7c;border-radius:12px;width:680px;max-height:85vh;
+  display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:0 0 40px rgba(64,170,255,.15);}
+#hmi-modal-hdr{background:linear-gradient(135deg,#0d1b2a,#0a1528);
+  border-bottom:2px solid #1a4a7c;padding:14px 18px;
+  display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
+#hmi-modal-hdr span{color:#4af;font-size:13px;font-weight:bold;letter-spacing:1.5px;}
+#hmi-close{background:rgba(255,68,68,.15);border:1px solid #ff4444;color:#ff4444;
+  padding:5px 14px;border-radius:6px;font:11px Consolas,monospace;cursor:pointer;}
+#hmi-close:hover{background:rgba(255,68,68,.3);}
+#hmi-content{overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;}
+#hmi-content::-webkit-scrollbar{width:5px;}
+#hmi-content::-webkit-scrollbar-thumb{background:#1a3a5c;border-radius:3px;}
+.hmi-section{background:rgba(10,24,40,.6);border:1px solid #1a3a5c;
+  border-radius:8px;padding:12px 14px;}
+.hmi-section-title{font-size:11px;letter-spacing:1.5px;font-weight:bold;
+  color:#6ab;margin-bottom:8px;text-transform:uppercase;}
+.hmi-alarm{display:flex;align-items:center;gap:10px;padding:7px 10px;
+  border-radius:6px;border:1px solid transparent;margin-bottom:5px;}
+.alarm-code{font-size:10px;font-weight:bold;min-width:65px;letter-spacing:.5px;}
+.alarm-sys{font-size:11px;color:#8ab;min-width:60px;}
+.alarm-msg{font-size:11px;color:#cde;flex:1;}
+.hmi-sensor{display:grid;grid-template-columns:120px 100px 110px 1fr;
+  align-items:center;gap:8px;padding:5px 0;
+  border-bottom:1px solid #0d1b2a;font-size:11px;}
+.hmi-sensor:last-child{border-bottom:none;}
+.sensor-val{font-weight:bold;font-family:Consolas,monospace;}
+.sensor-norm{color:#3a5a7c;font-size:10px;}
+.sensor-dev{font-size:10px;font-weight:bold;}
+.secom-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.secom-feat{background:rgba(10,18,32,.8);border:1px solid transparent;
+  border-radius:6px;padding:8px 10px;text-align:center;}
+.hmi-info-row{display:flex;justify-content:space-between;font-size:11px;
+  padding:4px 0;border-bottom:1px solid #0d1b2a;}
 </style>
 </head><body>
 
@@ -317,7 +457,7 @@ canvas{position:fixed;top:0;left:0;display:block;}
   <div id="chat-hdr"><div class="alive"></div>AI 學長 — 即時輔導</div>
   <div id="chat-msgs"><div class="msg ms">⏳ 等待訓練開始…</div></div>
   <div id="chat-input-row">
-    <input id="ci" placeholder="問學長… (C 鍵或直接點此)" />
+    <input id="ci" placeholder="問學長… (C 鍵)" />
     <button id="cs">送出</button>
   </div>
   <div id="chat-hint">C:對話 | Enter:送出 | ESC:返回操作</div>
@@ -325,21 +465,21 @@ canvas{position:fixed;top:0;left:0;display:block;}
 
 <!-- Loading -->
 <div id="loading-screen">
-  <div id="load-title">ASML TWINSCAN NXT:870</div>
+  <div style="font-size:16px;letter-spacing:3px;color:#4af;">ASML TWINSCAN NXT:870</div>
   <div id="load-pct">0%</div>
   <div class="bar-wrap"><div id="load-bar"></div></div>
-  <div id="load-sub">載入 3D 設備模型…</div>
+  <div style="font-size:11px;color:#5a8a9a;">載入 3D 設備模型…</div>
 </div>
 
 <!-- Start Screen -->
 <div id="start-screen">
-  <div style="font-size:48px;color:#4af;opacity:.3;">⚙</div>
+  <div style="font-size:48px;color:#4af;opacity:.25;">⚙</div>
   <h1>ASML TWINSCAN NXT:870<br>操作員故障排除訓練</h1>
   <h2>Virtual Fab — 第一人稱沉浸式訓練</h2>
   <div class="hint">
-    <b>WASD</b> 移動 &nbsp;|&nbsp; <b>滑鼠</b> 旋轉視角 &nbsp;|&nbsp;
-    <b>E</b> 檢查部件 &nbsp;|&nbsp; <b>C</b> 與學長對話<br>
-    <b>ESC</b> 暫停 &nbsp;|&nbsp; 右側面板隨時可輸入問題
+    <b>WASD</b> 移動 &nbsp;|&nbsp; <b>滑鼠</b> 旋轉視角（點擊畫面鎖定）&nbsp;|&nbsp; <b>E</b> 檢查部件<br>
+    <b>靠近左側 HMI 螢幕按 E</b> 查看即時感測器數值 &amp; SECOM 異常指標<br>
+    <b>C</b> 與 AI 學長對話 &nbsp;|&nbsp; <b>ESC</b> 暫停
   </div>
   <div id="diff-row">
     <label style="color:#6ab;font-size:12px;">訓練難度：</label>
@@ -362,10 +502,8 @@ canvas{position:fixed;top:0;left:0;display:block;}
 
 <!-- Crosshair -->
 <div id="xhair"></div>
-
-<!-- Interaction Prompt -->
+<!-- Prompt -->
 <div id="prompt"></div>
-
 <!-- Inspect Panel -->
 <div id="inspect-panel">
   <div id="inspect-title"></div>
@@ -373,10 +511,8 @@ canvas{position:fixed;top:0;left:0;display:block;}
   <div id="inspect-actions"></div>
   <div id="inspect-close" onclick="closeInspect()">✕ 關閉</div>
 </div>
-
 <!-- Controls Bar -->
-<div id="ctrl-bar">WASD: 移動 | E: 檢查部件 | C: 與學長對話 | ESC: 暫停</div>
-
+<div id="ctrl-bar">WASD: 移動 | E: 檢查部件 / HMI螢幕 | C: 學長對話 | ESC: 暫停</div>
 <!-- Pause -->
 <div id="pause">
   <h2>⏸ 訓練暫停</h2>
@@ -385,14 +521,27 @@ canvas{position:fixed;top:0;left:0;display:block;}
   <button class="pbtn" onclick="location.reload()">↺ 重新開始</button>
 </div>
 
+<!-- HMI Overlay -->
+<div id="hmi-overlay">
+  <div id="hmi-modal">
+    <div id="hmi-modal-hdr">
+      <span>⚙ ASML TWINSCAN NXT:870 — HMI 控制面板</span>
+      <button id="hmi-close" onclick="closeHMI()">✕ 關閉 [ESC]</button>
+    </div>
+    <div id="hmi-content">
+      <div style="color:#5a8a9a;text-align:center;padding:24px;">載入感測器資料…</div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
 <script>
 'use strict';
 
-// ── Mesh → action/label maps ─────────────────────────────────────────────────
-var MA = {
+// ── Mesh action / label maps ──────────────────────────────────────────────────
+var MA={
   Stage_Base:'查看晶圓載台位置誤差','Rail_-0.6':'查看晶圓載台位置誤差',
   'Rail_0.0':'查看晶圓載台位置誤差','Rail_0.6':'查看晶圓載台位置誤差',
   Wafer_Chuck:'查看晶圓載台位置誤差',Wafer:'查看晶圓載台位置誤差',
@@ -408,156 +557,189 @@ var MA = {
   Mirror2:'查看光源強度和穩定性',Mirror3:'查看光源強度和穩定性',
   Immersion_Hood:'檢查冷卻水流量和溫度',Immersion_Supply:'檢查冷卻水流量和溫度',
   Immersion_Return:'檢查冷卻水流量和溫度',Label_Immersion:'檢查冷卻水流量和溫度',
-  Duct_Top:'檢查真空系統壓力',Duct_Vent1:'檢查真空系統壓力',
-  Duct_Vent2:'檢查真空系統壓力',
+  Duct_Top:'檢查真空系統壓力',Duct_Vent1:'檢查真空系統壓力',Duct_Vent2:'檢查真空系統壓力',
   Cabinet_Main:'查看控制系統狀態',Cabinet_Panel:'查看控制系統狀態',
   Screen:'查看控制系統狀態',Keyboard:'查看控制系統狀態',
-  FOUP_Port:'確認晶圓傳送狀態',FOUP_Door:'確認晶圓傳送狀態',
-  Label_FOUP:'確認晶圓傳送狀態'
+  FOUP_Port:'確認晶圓傳送狀態',FOUP_Door:'確認晶圓傳送狀態',Label_FOUP:'確認晶圓傳送狀態',
+  HMI_Screen:'HMI'
 };
-var ML = {
+var ML={
   Stage_Base:'晶圓載台','Rail_-0.6':'晶圓載台','Rail_0.0':'晶圓載台',
-  'Rail_0.6':'晶圓載台',Wafer_Chuck:'晶圓載台',Wafer:'晶圓載台',
-  Label_Stage:'晶圓載台',
-  POB_Barrel:'投影鏡組',POB_Top_Cap:'投影鏡組',
-  POB_Bottom:'投影鏡組',Label_POB:'投影鏡組',
+  'Rail_0.6':'晶圓載台',Wafer_Chuck:'晶圓載台',Wafer:'晶圓載台',Label_Stage:'晶圓載台',
+  POB_Barrel:'投影鏡組',POB_Top_Cap:'投影鏡組',POB_Bottom:'投影鏡組',Label_POB:'投影鏡組',
   Illum_Barrel:'照明系統',Label_Illum:'照明系統',
-  Laser_Box:'雷射光源',Laser_Vent:'雷射光源',Laser_Out:'雷射光源',
-  Label_Laser:'雷射光源',
-  Beam_H1:'DUV光束',Beam_V1:'DUV光束',Beam_H2:'DUV光束',
-  Beam_V2:'DUV光束',Beam_Spot:'DUV光束',
+  Laser_Box:'雷射光源',Laser_Vent:'雷射光源',Laser_Out:'雷射光源',Label_Laser:'雷射光源',
+  Beam_H1:'DUV光束',Beam_V1:'DUV光束',Beam_H2:'DUV光束',Beam_V2:'DUV光束',Beam_Spot:'DUV光束',
   Mirror1:'反射鏡',Mirror2:'反射鏡',Mirror3:'反射鏡',
   Immersion_Hood:'液浸冷卻',Immersion_Supply:'液浸冷卻',
   Immersion_Return:'液浸冷卻',Label_Immersion:'液浸冷卻',
   Duct_Top:'通風排氣',Duct_Vent1:'通風排氣',Duct_Vent2:'通風排氣',
-  Cabinet_Main:'控制系統',Cabinet_Panel:'控制系統',
-  Screen:'控制系統',Keyboard:'控制系統',
-  FOUP_Port:'晶圓傳送',FOUP_Door:'晶圓傳送',Label_FOUP:'晶圓傳送'
+  Cabinet_Main:'控制系統',Cabinet_Panel:'控制系統',Screen:'控制系統',Keyboard:'控制系統',
+  FOUP_Port:'晶圓傳送',FOUP_Door:'晶圓傳送',Label_FOUP:'晶圓傳送',
+  HMI_Screen:'HMI 控制面板'
 };
-// Extended mappings
+var DESC={
+  '晶圓載台':'精密定位平台，負責承載並精確移動晶圓。位置精度須達奈米等級，任何震動或溫度變化都會影響對準精度。',
+  '投影鏡組':'核心光學系統，將光罩圖案縮小投影至晶圓。鏡組溫度變化 0.01°C 即可能造成對焦偏移。',
+  '雷射光源':'KrF 準分子雷射（248nm），提供曝光所需深紫外線。能量穩定性直接影響線寬均一性。',
+  '照明系統':'將雷射光整形均勻化，確保光罩面均勻照射。包含多組光學元件和快門。',
+  '液浸冷卻':'液浸水冷系統，維持鏡組底部與晶圓間的超純水層。水溫需控制在 ±0.001°C。',
+  '通風排氣':'維持機台內部氣體潔淨度，排除熱氣和化學氣體。',
+  '控制系統':'即時監控和控制所有子系統的主控電腦，處理數千個感測器數據。',
+  '晶圓傳送':'FOUP 介面和機械手臂，負責晶圓的自動裝卸，維持潔淨度和定位精度。',
+  'DUV光束':'深紫外線（248nm）光束傳輸路徑，需在氮氣環境中傳輸以避免能量衰減。',
+  '反射鏡':'高精度反射鏡，用於光束折轉和準直，鍍膜反射率 >99%。',
+  'HMI 控制面板':'設備主控制面板，顯示所有感測器即時數值、警報狀態及 SECOM 製程異常指標。'
+};
+var QUICK_ACTIONS={
+  '投影鏡組':['檢查投影鏡組溫度','調整投影鏡組溫度補償','記錄鏡組溫度數據'],
+  '晶圓載台':['查看晶圓載台位置誤差','重新校準晶圓載台','檢查載台馬達電流'],
+  '雷射光源':['查看光源強度和穩定性','重設雷射能量校準','檢查雷射氣體壓力'],
+  '液浸冷卻':['檢查冷卻水流量和溫度','清洗液浸水頭','更換過濾器'],
+  '照明系統':['查看光源強度和穩定性','調整照明均勻性','檢查快門功能'],
+  '控制系統':['查看控制系統狀態','重啟控制系統服務','下載診斷日誌'],
+  '晶圓傳送':['確認晶圓傳送狀態','重新對準傳送手臂','檢查 FOUP 鎖定'],
+  '通風排氣':['檢查真空系統壓力','清潔排氣過濾器','查看氣流量'],
+  'DUV光束':['查看光源強度和穩定性','對準光束路徑','檢查光束擋板'],
+  '反射鏡':['查看光源強度和穩定性','清潔反射鏡面','檢查反射率']
+};
 (function(){
   for(var i=0;i<10;i++){MA['Lens_'+i]='檢查投影鏡組溫度';ML['Lens_'+i]='投影鏡組';}
   for(var i=0;i<6;i++){MA['IllumLens_'+i]='查看光源強度和穩定性';ML['IllumLens_'+i]='照明系統';}
 })();
 
-// Part descriptions for inspect panel
-var DESC = {
-  '晶圓載台': '精密定位平台，負責承載並精確移動晶圓。位置精度須達奈米等級，任何震動或溫度變化都會影響對準精度。',
-  '投影鏡組': '核心光學系統，將光罩圖案縮小投影至晶圓。鏡組溫度變化 0.01°C 即可能造成對焦偏移。',
-  '雷射光源': 'KrF 準分子雷射（248nm），提供曝光所需的深紫外線。能量穩定性直接影響線寬均一性。',
-  '照明系統': '將雷射光整形並均勻化，確保光罩面均勻照射。包含多組光學元件和快門。',
-  '液浸冷卻': '液浸水冷系統，維持鏡組底部與晶圓間的超純水層。水溫需控制在 ±0.001°C。',
-  '通風排氣': '維持機台內部氣體潔淨度，排除熱氣和化學氣體。',
-  '控制系統': '即時監控和控制所有子系統的主控電腦，處理數千個感測器數據。',
-  '晶圓傳送': 'FOUP 介面和機械手臂，負責晶圓的自動裝卸，維持潔淨度和定位精度。',
-  'DUV光束': '深紫外線（248nm）光束傳輸路徑，需在氮氣環境中傳輸以避免能量衰減。',
-  '反射鏡': '高精度反射鏡，用於光束折轉和準直，鍍膜反射率 >99%。'
-};
-
-// Quick actions for inspect panel (part label → list of actions)
-var QUICK_ACTIONS = {
-  '投影鏡組': ['檢查投影鏡組溫度','調整投影鏡組溫度補償','記錄鏡組溫度數據'],
-  '晶圓載台': ['查看晶圓載台位置誤差','重新校準晶圓載台','檢查載台馬達電流'],
-  '雷射光源': ['查看光源強度和穩定性','重設雷射能量校準','檢查雷射氣體壓力'],
-  '液浸冷卻': ['檢查冷卻水流量和溫度','清洗液浸水頭','更換過濾器'],
-  '照明系統': ['查看光源強度和穩定性','調整照明均勻性','檢查快門功能'],
-  '控制系統': ['查看控制系統狀態','重啟控制系統服務','下載診斷日誌'],
-  '晶圓傳送': ['確認晶圓傳送狀態','重新對準傳送手臂','檢查 FOUP 鎖定'],
-  '通風排氣': ['檢查真空系統壓力','清潔排氣過濾器','查看氣流量'],
-  'DUV光束': ['查看光源強度和穩定性','對準光束路徑','檢查光束擋板'],
-  '反射鏡': ['查看光源強度和穩定性','清潔反射鏡面','檢查反射率']
-};
-
 // ── Three.js Setup ────────────────────────────────────────────────────────────
-var CW = window.innerWidth - 300;  // canvas width (minus chat)
-var CH = window.innerHeight;
-
-var scene = new THREE.Scene();
-scene.background = new THREE.Color(0x050d1a);
-scene.fog = new THREE.FogExp2(0x050d1a, 0.018);
-
-var renderer = new THREE.WebGLRenderer({antialias: true});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(CW, CH);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+var CW=window.innerWidth-300, CH=window.innerHeight;
+var scene=new THREE.Scene();
+scene.background=new THREE.Color(0x050d1a);
+scene.fog=new THREE.FogExp2(0x050d1a,0.016);
+var renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(CW,CH); renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
-renderer.domElement.style.width = CW + 'px';
-renderer.domElement.style.height = CH + 'px';
-
-var camera = new THREE.PerspectiveCamera(72, CW/CH, 0.05, 100);
-camera.position.set(0, 1.6, 4);
-
+renderer.domElement.style.width=CW+'px';renderer.domElement.style.height=CH+'px';
+var camera=new THREE.PerspectiveCamera(72,CW/CH,0.05,100);
+camera.position.set(0,1.6,4);
 // Lights
-scene.add(new THREE.AmbientLight(0xffffff, 0.65));
-var sun = new THREE.DirectionalLight(0xffffff, 1.3);
-sun.position.set(6, 10, 6); sun.castShadow = true; scene.add(sun);
-var fill = new THREE.DirectionalLight(0x4488ff, 0.3);
-fill.position.set(-6, 3, -6); scene.add(fill);
-var rim = new THREE.DirectionalLight(0xffeedd, 0.15);
-rim.position.set(0, -3, -8); scene.add(rim);
-
-// Floor grid
-var floorGeo = new THREE.PlaneGeometry(30, 30);
-var floorMat = new THREE.MeshStandardMaterial({color:0x080e18,roughness:.95,metalness:.05});
-var floor = new THREE.Mesh(floorGeo, floorMat);
-floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
+scene.add(new THREE.AmbientLight(0xffffff,0.65));
+var sun=new THREE.DirectionalLight(0xffffff,1.3);
+sun.position.set(6,10,6);sun.castShadow=true;scene.add(sun);
+scene.add(Object.assign(new THREE.DirectionalLight(0x4488ff,0.3),{position:{x:-6,y:3,z:-6}}).position&&new THREE.DirectionalLight(0x4488ff,0.3)||(function(){var l=new THREE.DirectionalLight(0x4488ff,0.3);l.position.set(-6,3,-6);scene.add(l);return l;})());
+var fill=new THREE.DirectionalLight(0x4488ff,.3);fill.position.set(-6,3,-6);scene.add(fill);
+// Floor
+var floorMesh=new THREE.Mesh(new THREE.PlaneGeometry(40,40),
+  new THREE.MeshStandardMaterial({color:0x080e18,roughness:.95,metalness:.05}));
+floorMesh.rotation.x=-Math.PI/2;floorMesh.receiveShadow=true;scene.add(floorMesh);
 
 // ── PointerLockControls ───────────────────────────────────────────────────────
-var controls = new THREE.PointerLockControls(camera, document.body);
+var controls=new THREE.PointerLockControls(camera,document.body);
 scene.add(controls.getObject());
+var moveF=false,moveB=false,moveL=false,moveR=false;
+var velocity=new THREE.Vector3();
+var clock=new THREE.Clock();
+var gameStarted=false,chatFocus=false,inspecting=false,hmiOpen=false;
 
-var moveF=false, moveB=false, moveL=false, moveR=false;
-var velocity = new THREE.Vector3();
-var clock = new THREE.Clock();
-var gameStarted = false;
-var chatFocus = false;
-var inspecting = false;
+// ── Raycasting & Model ────────────────────────────────────────────────────────
+var allMeshes=[],hoveredObj=null,origMats=new Map();
+var hlMat=new THREE.MeshStandardMaterial({color:0xffa500,emissive:0x220800,metalness:.3,roughness:.5});
+var raycaster=new THREE.Raycaster();raycaster.far=9;
+function getInfo(obj){var o=obj;while(o){if(MA[o.name])return{label:ML[o.name]||o.name,action:MA[o.name]};o=o.parent;}return null;}
 
-// ── Raycasting & Model ───────────────────────────────────────────────────────
-var allMeshes = [];
-var hoveredObj = null;
-var origMats = new Map();
-var hlMat = new THREE.MeshStandardMaterial(
-  {color:0xffa500,emissive:0x220800,metalness:.3,roughness:.5});
-var raycaster = new THREE.Raycaster();
-raycaster.far = 8;
+// ── HMI Screen (canvas texture) ───────────────────────────────────────────────
+var hmiCanvas=null,hmiCtx=null,hmiTex=null,hmiMesh=null;
 
-function getInfo(obj) {
-  var o = obj;
-  while (o) { if (MA[o.name]) return {label:ML[o.name]||o.name, action:MA[o.name]}; o=o.parent; }
-  return null;
+function createHMIScreen(modelBox){
+  var size=modelBox.getSize(new THREE.Vector3());
+  // Canvas
+  hmiCanvas=document.createElement('canvas');
+  hmiCanvas.width=512;hmiCanvas.height=320;
+  hmiCtx=hmiCanvas.getContext('2d');
+  drawHMIScreen(null);
+  hmiTex=new THREE.CanvasTexture(hmiCanvas);
+  // Plane on left face: x = -size.x/2, facing -X direction (rotate Y = -PI/2)
+  var sw=Math.min(size.z*0.38, 1.2), sh=Math.min(size.y*0.22, 0.75);
+  hmiMesh=new THREE.Mesh(
+    new THREE.PlaneGeometry(sw,sh),
+    new THREE.MeshBasicMaterial({map:hmiTex,side:THREE.FrontSide})
+  );
+  hmiMesh.name='HMI_Screen';
+  hmiMesh.position.set(-size.x/2-0.015, size.y*0.62, 0);
+  hmiMesh.rotation.y=-Math.PI/2;
+  scene.add(hmiMesh);
+  allMeshes.push(hmiMesh);
+}
+
+function drawHMIScreen(data){
+  if(!hmiCtx) return;
+  var W=512,H=320,ctx=hmiCtx;
+  ctx.fillStyle='#030810';ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#1a4a7c';ctx.lineWidth=3;ctx.strokeRect(2,2,W-4,H-4);
+  // Header
+  ctx.fillStyle='#0a1828';ctx.fillRect(0,0,W,46);
+  ctx.strokeStyle='#1a4a7c';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(0,46);ctx.lineTo(W,46);ctx.stroke();
+  ctx.fillStyle='#4af';ctx.font='bold 17px Consolas';ctx.fillText('ASML HMI',14,30);
+  ctx.fillStyle='#5a8a9a';ctx.font='12px Consolas';ctx.fillText('NXT:870  DUV 248nm',140,30);
+  // Status lights
+  var labels=['冷卻','光源','鏡組','載台','對準','光罩','傳送','控制'];
+  var colors=data&&data.sys_colors?data.sys_colors:Array(8).fill('#44cc88');
+  for(var i=0;i<8;i++){
+    var col=i<colors.length?colors[i]:'#44cc88';
+    var x=14+(i%4)*124, y=62+Math.floor(i/4)*60;
+    ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=8;
+    ctx.beginPath();ctx.arc(x+10,y+10,9,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.fillStyle='#8ab';ctx.font='13px Consolas';ctx.fillText(labels[i],x+26,y+15);
+  }
+  // Alarm footer
+  var hasAlarm=data&&data.alarms&&data.alarms.length>0;
+  if(hasAlarm){
+    ctx.fillStyle='rgba(255,68,0,.12)';ctx.fillRect(0,H-54,W,54);
+    ctx.strokeStyle='#ff440040';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(0,H-54);ctx.lineTo(W,H-54);ctx.stroke();
+    ctx.fillStyle='#ff6644';ctx.font='bold 13px Consolas';
+    var txt='⚠  '+data.alarms[0].msg;
+    if(txt.length>44)txt=txt.substring(0,44)+'…';
+    ctx.fillText(txt,14,H-32);
+    ctx.fillStyle='#ffa500';ctx.font='11px Consolas';
+    ctx.fillText('按 E 查看詳細資料',14,H-12);
+  } else if(data){
+    ctx.fillStyle='rgba(68,204,136,.08)';ctx.fillRect(0,H-44,W,44);
+    ctx.fillStyle='#44cc88';ctx.font='13px Consolas';ctx.fillText('✓  系統運行正常',14,H-16);
+    ctx.fillStyle='#5a8a9a';ctx.font='11px Consolas';ctx.fillText('按 E 查看詳細資料',14,H-4);
+  } else {
+    ctx.fillStyle='#2a4a6a';ctx.font='12px Consolas';ctx.fillText('⏳ 等待情境開始…',14,H-18);
+  }
+  if(hmiTex)hmiTex.needsUpdate=true;
 }
 
 // ── Load GLB ──────────────────────────────────────────────────────────────────
-var loader = new THREE.GLTFLoader();
+var loader=new THREE.GLTFLoader();
 loader.load('./asml_duv.glb',
   function(gltf){
     document.getElementById('loading-screen').style.display='none';
     var ss=document.getElementById('start-screen');
-    ss.style.display='flex'; ss.style.width=CW+'px'; ss.style.height=CH+'px';
-
-    var model = gltf.scene;
-    model.traverse(function(o){
-      if(o.isMesh){o.castShadow=true;o.receiveShadow=true;allMeshes.push(o);}
-    });
+    ss.style.display='flex';ss.style.width=CW+'px';ss.style.height=CH+'px';
+    var model=gltf.scene;
+    model.traverse(function(o){if(o.isMesh){o.castShadow=true;o.receiveShadow=true;allMeshes.push(o);}});
     scene.add(model);
-    // Auto-fit: center on floor
-    var box = new THREE.Box3().setFromObject(model);
-    var c = box.getCenter(new THREE.Vector3());
-    var s = box.getSize(new THREE.Vector3());
-    model.position.set(-c.x, -box.min.y, -c.z);
-    var r = Math.max(s.x, s.z) * 0.8;
-    camera.position.set(r, 1.6, r);
-    var look = new THREE.Vector3(0, s.y*0.4, 0);
-    camera.lookAt(look);
+    var box=new THREE.Box3().setFromObject(model);
+    var c=box.getCenter(new THREE.Vector3()),s=box.getSize(new THREE.Vector3());
+    model.position.set(-c.x,-box.min.y,-c.z);
+    // Re-calc box in world space after positioning
+    var worldBox=new THREE.Box3().setFromObject(model);
+    // HMI Screen on left face
+    createHMIScreen(worldBox.getSize(new THREE.Vector3())&&worldBox);
+    // Camera start position
+    var r=Math.max(s.x,s.z)*0.85;
+    camera.position.set(r,1.6,r);
+    var look=new THREE.Vector3(0,s.y*0.4,0);camera.lookAt(look);
   },
   function(xhr){
-    if(xhr.total>0){
-      var p=Math.round(xhr.loaded/xhr.total*100);
+    if(xhr.total>0){var p=Math.round(xhr.loaded/xhr.total*100);
       document.getElementById('load-pct').textContent=p+'%';
-      document.getElementById('load-bar').style.width=p+'%';
-    }
+      document.getElementById('load-bar').style.width=p+'%';}
   },
   function(err){
     document.getElementById('loading-screen').innerHTML=
@@ -566,103 +748,155 @@ loader.load('./asml_duv.glb',
   }
 );
 
-// ── DOM refs ─────────────────────────────────────────────────────────────────
-var $ss    = document.getElementById('start-screen');
-var $hud   = document.getElementById('hud');
-var $xhair = document.getElementById('xhair');
-var $prompt= document.getElementById('prompt');
-var $ctrl  = document.getElementById('ctrl-bar');
-var $pause = document.getElementById('pause');
-var $ip    = document.getElementById('inspect-panel');
-var $iT    = document.getElementById('inspect-title');
-var $iD    = document.getElementById('inspect-desc');
-var $iA    = document.getElementById('inspect-actions');
-var $msgs  = document.getElementById('chat-msgs');
-var $ci    = document.getElementById('ci');
-var $cs    = document.getElementById('cs');
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+var $hud=document.getElementById('hud');
+var $xhair=document.getElementById('xhair');
+var $prompt=document.getElementById('prompt');
+var $ctrl=document.getElementById('ctrl-bar');
+var $pause=document.getElementById('pause');
+var $ip=document.getElementById('inspect-panel');
+var $msgs=document.getElementById('chat-msgs');
+var $ci=document.getElementById('ci');
+var $cs=document.getElementById('cs');
+var $hmiOverlay=document.getElementById('hmi-overlay');
+var $hmiContent=document.getElementById('hmi-content');
 
-// ── Chat ─────────────────────────────────────────────────────────────────────
-function addMsg(role, text){
-  // Remove initial "waiting" message
-  var w=$msgs.querySelector('.ms');
-  if(w && w.textContent.includes('等待')) w.remove();
+// ── Chat ──────────────────────────────────────────────────────────────────────
+function addMsg(role,text){
+  var w=$msgs.querySelector('.ms');if(w&&w.textContent.includes('等待'))w.remove();
   var d=document.createElement('div');
   d.className='msg '+(role==='user'?'mu':role==='sys'?'ms':'ma');
-  d.textContent = role==='user'?'你: '+text : role==='sys'?text : '學長: '+text;
-  $msgs.appendChild(d);
-  $msgs.scrollTop=$msgs.scrollHeight;
+  d.textContent=role==='user'?'你: '+text:role==='sys'?text:'學長: '+text;
+  $msgs.appendChild(d);$msgs.scrollTop=$msgs.scrollHeight;
 }
-
 function sendChat(txt){
-  txt = txt.trim();
-  if(!txt || !gameStarted) return;
-  addMsg('user', txt);
-  $ci.value='';
-  $cs.disabled=true;
+  txt=txt.trim();if(!txt||!gameStarted)return;
+  addMsg('user',txt);$ci.value='';$cs.disabled=true;
   fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({text:txt})})
   .then(function(r){return r.json();})
-  .then(function(d){if(d.ai_msg) addMsg('ai',d.ai_msg);})
-  .catch(function(e){addMsg('sys','⚠ 連線錯誤: '+e);})
+  .then(function(d){if(d.ai_msg)addMsg('ai',d.ai_msg);})
+  .catch(function(e){addMsg('sys','⚠ 連線錯誤');})
   .finally(function(){$cs.disabled=false;});
 }
-
-$cs.addEventListener('click', function(){sendChat($ci.value);});
-$ci.addEventListener('keydown', function(e){
-  if(e.key==='Enter' && !e.shiftKey){e.preventDefault();sendChat($ci.value);}
-  if(e.key==='Escape'){$ci.blur();exitChatFocus();}
+$cs.onclick=function(){sendChat($ci.value);};
+$ci.addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat($ci.value);}
+  if(e.key==='Escape'){$ci.blur();chatFocus=false;}
 });
-$ci.addEventListener('focus', function(){chatFocus=true; controls.unlock();});
-$ci.addEventListener('blur',  function(){chatFocus=false;});
-
-function exitChatFocus(){chatFocus=false;}
+$ci.addEventListener('focus',function(){chatFocus=true;controls.unlock();});
+$ci.addEventListener('blur',function(){chatFocus=false;});
 
 // ── Inspect Panel ─────────────────────────────────────────────────────────────
-function openInspect(label, action){
-  inspecting = true;
-  controls.unlock();
+function openInspect(label,action){
+  inspecting=true;controls.unlock();
   $ip.style.display='flex';
-  $iT.textContent = '🔍 ' + label;
-  $iD.textContent = DESC[label] || '請進一步檢查此子系統的運作狀態。';
-  $iA.innerHTML = '';
-  var actions = QUICK_ACTIONS[label] || [action];
-  actions.forEach(function(a){
-    var btn=document.createElement('button');
-    btn.className='qbtn'; btn.textContent='▶ '+a;
-    btn.onclick=function(){sendChat(a); closeInspect();};
-    $iA.appendChild(btn);
+  document.getElementById('inspect-title').textContent='🔍 '+label;
+  document.getElementById('inspect-desc').textContent=DESC[label]||'請進一步檢查此子系統的運作狀態。';
+  var $ia=document.getElementById('inspect-actions');$ia.innerHTML='';
+  var acts=QUICK_ACTIONS[label]||[action];
+  acts.forEach(function(a){
+    var btn=document.createElement('button');btn.className='qbtn';btn.textContent='▶ '+a;
+    btn.onclick=function(){sendChat(a);closeInspect();};$ia.appendChild(btn);
   });
-  // Also show a "ask mentor" button
-  var ask=document.createElement('button');
-  ask.className='qbtn';
-  ask.textContent='💬 詢問學長：這個部件的狀態如何？';
+  var ask=document.createElement('button');ask.className='qbtn';
+  ask.textContent='💬 學長，這個部件狀態如何？';
   ask.onclick=function(){sendChat('學長，'+label+'目前狀態如何？');closeInspect();};
-  $iA.appendChild(ask);
+  $ia.appendChild(ask);
 }
-
 function closeInspect(){
-  inspecting=false;
-  $ip.style.display='none';
-  if(gameStarted) controls.lock();
+  inspecting=false;$ip.style.display='none';
+  if(gameStarted&&!hmiOpen)controls.lock();
 }
 
-// ── PointerLock events ────────────────────────────────────────────────────────
-controls.addEventListener('lock', function(){
-  $ss.style.display='none';
+// ── HMI Overlay ───────────────────────────────────────────────────────────────
+function showHMIOverlay(){
+  hmiOpen=true;controls.unlock();
+  $hmiOverlay.style.display='flex';
+  $hmiOverlay.style.width=CW+'px';$hmiOverlay.style.height='100vh';
+  $hmiContent.innerHTML='<div style="color:#5a8a9a;text-align:center;padding:24px;">載入感測器資料…</div>';
+  fetch('/api/hmi').then(function(r){return r.json();}).then(function(d){renderHMI(d);})
+  .catch(function(){$hmiContent.innerHTML='<div style="color:#f44;padding:20px;">無法取得 HMI 資料</div>';});
+}
+function closeHMI(){
+  hmiOpen=false;$hmiOverlay.style.display='none';
+  if(gameStarted)controls.lock();
+}
+window.closeHMI=closeHMI;
+
+function renderHMI(d){
+  if(!d||!d.sensors){$hmiContent.innerHTML='<div style="color:#5a8a9a;padding:20px">尚未開始情境</div>';return;}
+  var html='';
+  // Scenario info
+  html+='<div class="hmi-section">';
+  html+='<div class="hmi-section-title">📋 情境資訊</div>';
+  html+='<div class="hmi-info-row"><span style="color:#6ab">情境名稱</span><span style="color:#ffa500">'+(d.scenario_name||'N/A')+'</span></div>';
+  html+='<div class="hmi-info-row"><span style="color:#6ab">故障類型</span><span style="color:#cde">'+(d.scenario_type||'N/A')+'</span></div>';
+  html+='</div>';
+  // Alarms
+  var aColor=d.alarms&&d.alarms.length?'#ff6644':'#44cc88';
+  var aTitle=d.alarms&&d.alarms.length?'⚠ 活動警報 ('+d.alarms.length+')':'✅ 無活動警報';
+  html+='<div class="hmi-section"><div class="hmi-section-title" style="color:'+aColor+'">'+aTitle+'</div>';
+  if(d.alarms&&d.alarms.length){
+    d.alarms.forEach(function(a){
+      var col=a.level==='critical'?'#ff4444':'#ffaa00';
+      html+='<div class="hmi-alarm" style="border-color:'+col+'44;background:'+col+'0e">';
+      html+='<span class="alarm-code" style="color:'+col+'">'+a.code+'</span>';
+      html+='<span class="alarm-sys">'+a.system+'</span>';
+      html+='<span class="alarm-msg">'+a.msg+'</span></div>';
+    });
+  } else {
+    html+='<div style="color:#44cc88;font-size:11px;padding:4px 0;">所有子系統運行正常</div>';
+  }
+  html+='</div>';
+  // Sensors
+  html+='<div class="hmi-section"><div class="hmi-section-title">📊 即時感測器數值</div>';
+  (d.sensors||[]).forEach(function(s){
+    var col=s.status==='critical'?'#ff4444':s.status==='warning'?'#ffaa00':'#44cc88';
+    var icon=s.status==='critical'?'🔴':s.status==='warning'?'🟡':'🟢';
+    html+='<div class="hmi-sensor">';
+    html+='<span>'+icon+' '+s.label+'</span>';
+    html+='<span class="sensor-val" style="color:'+col+'">'+s.value+' '+s.unit+'</span>';
+    html+='<span class="sensor-norm">正常: '+s.normal+'</span>';
+    html+='<span class="sensor-dev" style="color:'+col+'">'+(s.dev||'')+'</span>';
+    html+='</div>';
+  });
+  html+='</div>';
+  // SECOM
+  if(d.secom&&d.secom.length){
+    html+='<div class="hmi-section"><div class="hmi-section-title">🔬 SECOM 製程參數異常指標</div>';
+    html+='<div class="secom-grid">';
+    d.secom.forEach(function(f){
+      var col=f.severity==='critical'?'#ff4444':f.severity==='warning'?'#ffaa00':'#44cc88';
+      var sig=(f.sigma>=0?'+':'')+f.sigma+'σ';
+      html+='<div class="secom-feat" style="border-color:'+col+'33">';
+      html+='<div style="color:#5a8a9a;font-size:10px;">'+f.feature+'</div>';
+      html+='<div style="color:'+col+';font-size:14px;font-weight:bold;margin-top:3px;">'+sig+'</div>';
+      html+='</div>';
+    });
+    html+='</div></div>';
+  }
+  $hmiContent.innerHTML=html;
+  // Update canvas texture
+  drawHMIScreen(d);
+}
+
+// ── Pointer Lock events ───────────────────────────────────────────────────────
+controls.addEventListener('lock',function(){
+  document.getElementById('start-screen').style.display='none';
   $pause.style.display='none';
   $xhair.style.display='block';
-  // Position xhair at center of 3D area (not chat panel)
-  $xhair.style.left = (CW/2)+'px'; $xhair.style.top='50%';
+  $xhair.style.left=(CW/2-12)+'px';$xhair.style.top='calc(50% - 12px)';
 });
-controls.addEventListener('unlock', function(){
-  if(gameStarted && !chatFocus && !inspecting){
-    $pause.style.display='flex';
-    $pause.style.width=CW+'px'; $pause.style.height='100vh';
+controls.addEventListener('unlock',function(){
+  if(gameStarted&&!chatFocus&&!inspecting&&!hmiOpen){
+    $pause.style.display='flex';$pause.style.width=CW+'px';$pause.style.height='100vh';
     $xhair.style.display='none';
   }
 });
 
-document.getElementById('start-btn').addEventListener('click', function(){
+// ── Start button ──────────────────────────────────────────────────────────────
+document.getElementById('start-btn').addEventListener('click',function(){
   var diff=document.getElementById('difficulty').value;
   document.getElementById('start-btn').textContent='⏳ 載入中…';
   fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -670,63 +904,58 @@ document.getElementById('start-btn').addEventListener('click', function(){
   .then(function(r){return r.json();})
   .then(function(d){
     gameStarted=true;
-    if(d.ai_msg) addMsg('ai',d.ai_msg);
-    addMsg('sys','訓練開始！WASD移動，靠近部件按 E 檢查，C 鍵對話');
-    $hud.style.display='flex'; $ctrl.style.display='block';
-    updateHUD();
-    startTick();
-    controls.lock();
+    if(d.ai_msg)addMsg('ai',d.ai_msg);
+    addMsg('sys','訓練開始！靠近左側 HMI 螢幕按 E 查看感測器數值');
+    $hud.style.display='flex';$ctrl.style.display='block';
+    updateHUD();startTick();controls.lock();
   })
   .catch(function(e){
     document.getElementById('start-btn').textContent='▶ 開始訓練 — 點此進入';
-    addMsg('sys','⚠ 無法連線到訓練系統: '+e);
+    addMsg('sys','⚠ 無法連線: '+e);
   });
 });
+document.getElementById('resume-btn').addEventListener('click',function(){controls.lock();});
 
-document.getElementById('resume-btn').addEventListener('click', function(){controls.lock();});
-
-// ── Keyboard ─────────────────────────────────────────────────────────────────
-document.addEventListener('keydown', function(e){
-  if(chatFocus) return;
+// ── Keyboard ──────────────────────────────────────────────────────────────────
+document.addEventListener('keydown',function(e){
+  if(chatFocus)return;
+  if(hmiOpen&&e.key==='Escape'){closeHMI();return;}
   switch(e.code){
-    case 'KeyW': case 'ArrowUp':    moveF=true;  break;
-    case 'KeyS': case 'ArrowDown':  moveB=true;  break;
-    case 'KeyA': case 'ArrowLeft':  moveL=true;  break;
-    case 'KeyD': case 'ArrowRight': moveR=true;  break;
+    case 'KeyW':case 'ArrowUp':    moveF=true;break;
+    case 'KeyS':case 'ArrowDown':  moveB=true;break;
+    case 'KeyA':case 'ArrowLeft':  moveL=true;break;
+    case 'KeyD':case 'ArrowRight': moveR=true;break;
     case 'KeyE':
-      if(hoveredObj && !inspecting){
-        var inf=getInfo(hoveredObj);
-        if(inf) openInspect(inf.label, inf.action);
-      } else if(inspecting){
-        closeInspect();
+      if(hmiOpen){closeHMI();break;}
+      if(inspecting){closeInspect();break;}
+      if(hoveredObj){
+        if(hoveredObj.name==='HMI_Screen'){showHMIOverlay();}
+        else{var inf=getInfo(hoveredObj);if(inf)openInspect(inf.label,inf.action);}
       }
       break;
-    case 'KeyC':
-      if(!chatFocus){ $ci.focus(); }
-      break;
-    case 'KeyR':
-      if(gameStarted && !controls.isLocked) controls.lock();
-      break;
+    case 'KeyC':$ci.focus();break;
+    case 'KeyR':if(gameStarted&&!controls.isLocked)controls.lock();break;
   }
 });
-document.addEventListener('keyup', function(e){
+document.addEventListener('keyup',function(e){
   switch(e.code){
-    case 'KeyW':case 'ArrowUp':    moveF=false; break;
-    case 'KeyS':case 'ArrowDown':  moveB=false; break;
-    case 'KeyA':case 'ArrowLeft':  moveL=false; break;
-    case 'KeyD':case 'ArrowRight': moveR=false; break;
+    case 'KeyW':case 'ArrowUp':    moveF=false;break;
+    case 'KeyS':case 'ArrowDown':  moveB=false;break;
+    case 'KeyA':case 'ArrowLeft':  moveL=false;break;
+    case 'KeyD':case 'ArrowRight': moveR=false;break;
   }
 });
 
-// ── HUD ──────────────────────────────────────────────────────────────────────
-var SYS = [
-  ['❄️','冷卻'],['💡','光源'],['🔭','鏡組'],['💿','載台'],
-  ['🎯','對準'],['📐','光罩'],['🦾','傳送'],['🖥','控制']
-];
-function updateHUD(){
+// ── HUD subsystem lights ──────────────────────────────────────────────────────
+var SYS=[['❄️','冷卻'],['💡','光源'],['🔭','鏡組'],['💿','載台'],
+         ['🎯','對準'],['📐','光罩'],['🦾','傳送'],['🖥','控制']];
+function updateHUD(colors){
+  colors=colors||Array(8).fill('#44cc88');
   var html='';
-  SYS.forEach(function(s){
-    html+='<div class="si"><div class="dot g"></div>'+s[0]+' '+s[1]+'</div>';
+  SYS.forEach(function(s,i){
+    var c=colors[i]||'#44cc88';
+    var cls=c==='#44cc88'?'g':c==='#ffaa00'?'y':'r';
+    html+='<div class="si"><div class="dot '+cls+'"></div>'+s[0]+' '+s[1]+'</div>';
   });
   document.getElementById('sys-lights').innerHTML=html;
 }
@@ -734,77 +963,71 @@ function updateHUD(){
 // ── Auto-tick ─────────────────────────────────────────────────────────────────
 var tickTimer=null;
 function startTick(){
-  if(tickTimer) return;
+  if(tickTimer)return;
   tickTimer=setInterval(function(){
-    if(!gameStarted) return;
-    fetch('/api/tick')
-    .then(function(r){return r.json();})
-    .then(function(d){if(d.ok && d.ai_msg) addMsg('ai',d.ai_msg);})
-    .catch(function(){});
-  }, 8000);
+    if(!gameStarted)return;
+    fetch('/api/tick').then(function(r){return r.json();})
+    .then(function(d){
+      if(d.ok&&d.ai_msg)addMsg('ai',d.ai_msg);
+      // Refresh HMI canvas in background
+      fetch('/api/hmi').then(function(r){return r.json();})
+      .then(function(h){if(h.sys_colors){updateHUD(h.sys_colors);drawHMIScreen(h);}})
+      .catch(function(){});
+    }).catch(function(){});
+  },8000);
 }
 
 // ── Render loop ───────────────────────────────────────────────────────────────
 function animate(){
   requestAnimationFrame(animate);
   var dt=clock.getDelta();
-
   // Movement
-  if(controls.isLocked && gameStarted){
-    velocity.x -= velocity.x * 9 * dt;
-    velocity.z -= velocity.z * 9 * dt;
+  if(controls.isLocked&&gameStarted){
+    velocity.x-=velocity.x*9*dt;velocity.z-=velocity.z*9*dt;
     var sp=5.5;
-    if(moveF) velocity.z -= sp*dt;
-    if(moveB) velocity.z += sp*dt;
-    if(moveL) velocity.x -= sp*dt;
-    if(moveR) velocity.x += sp*dt;
-    controls.moveRight( velocity.x * dt);
-    controls.moveForward(-velocity.z * dt);
-    camera.position.y = 1.6; // lock to eye height
+    if(moveF)velocity.z-=sp*dt;if(moveB)velocity.z+=sp*dt;
+    if(moveL)velocity.x-=sp*dt;if(moveR)velocity.x+=sp*dt;
+    controls.moveRight(velocity.x*dt);controls.moveForward(-velocity.z*dt);
+    camera.position.y=1.6;
   }
-
-  // Raycast from camera center (FPS style)
+  // Raycasting
   if(gameStarted){
-    raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+    raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
     var hits=raycaster.intersectObjects(allMeshes);
-
-    // Restore previous highlight
     if(hoveredObj){
-      if(origMats.has(hoveredObj)) hoveredObj.material=origMats.get(hoveredObj);
+      if(origMats.has(hoveredObj))hoveredObj.material=origMats.get(hoveredObj);
       hoveredObj=null;
-      if(!inspecting){ $prompt.style.display='none'; $xhair.classList.remove('hit'); }
+      if(!inspecting&&!hmiOpen){$prompt.style.display='none';$xhair.classList.remove('hit');}
     }
-
     if(hits.length>0){
       var obj=hits[0].object;
       var inf=getInfo(obj);
       if(inf){
-        if(!origMats.has(obj)) origMats.set(obj,obj.material);
-        obj.material=hlMat; hoveredObj=obj;
-        if(!inspecting){
-          $prompt.textContent='[E] 檢查: '+inf.label;
-          $prompt.style.left=(CW/2)+'px';
-          $prompt.style.display='block';
+        if(!origMats.has(obj))origMats.set(obj,obj.material);
+        obj.material=hlMat;hoveredObj=obj;
+        if(!inspecting&&!hmiOpen){
+          $prompt.textContent=(obj.name==='HMI_Screen'?'[E] 開啟 HMI 控制面板':'[E] 檢查: '+inf.label);
+          $prompt.style.left=(CW/2)+'px';$prompt.style.display='block';
           $xhair.classList.add('hit');
         }
       }
     }
   }
-
-  renderer.render(scene, camera);
+  renderer.render(scene,camera);
 }
 animate();
 
 // ── Resize ────────────────────────────────────────────────────────────────────
-window.addEventListener('resize', function(){
-  CW=window.innerWidth-300; CH=window.innerHeight;
-  camera.aspect=CW/CH; camera.updateProjectionMatrix();
+window.addEventListener('resize',function(){
+  CW=window.innerWidth-300;CH=window.innerHeight;
+  camera.aspect=CW/CH;camera.updateProjectionMatrix();
   renderer.setSize(CW,CH);
-  renderer.domElement.style.width=CW+'px';
-  renderer.domElement.style.height=CH+'px';
-  if($ss.style.display!=='none'){$ss.style.width=CW+'px';$ss.style.height=CH+'px';}
-  $xhair.style.left=(CW/2)+'px';
-  $prompt.style.left=(CW/2)+'px';
+  renderer.domElement.style.width=CW+'px';renderer.domElement.style.height=CH+'px';
+  var ss=document.getElementById('start-screen');
+  if(ss.style.display!=='none'){ss.style.width=CW+'px';ss.style.height=CH+'px';}
+  if($pause.style.display!=='none'){$pause.style.width=CW+'px';}
+  if($hmiOverlay.style.display!=='none'){$hmiOverlay.style.width=CW+'px';}
+  $xhair.style.left=(CW/2-12)+'px';$prompt.style.left=(CW/2)+'px';
 });
 </script>
 </body></html>
@@ -822,12 +1045,22 @@ def _write_viewer_html(static_dir: Path) -> None:
 
 def start_game(secom_data_path: str, use_ai_mentor: bool = True,
                port: int = 8765) -> str:
-    """啟動遊戲伺服器，回傳遊戲 URL。"""
     global _system_instance
     print("[OK] Loading training system…")
     _system_instance = SimulationTrainingSystem(secom_data_path,
                                                 use_ai_mentor=use_ai_mentor)
+
+    # Monkey-patch _generate_equipment_diagram to capture state for HMI
+    _orig_gen = _system_instance._generate_equipment_diagram.__func__
+
+    def _patched_gen(self, state):
+        _build_hmi_data(state)
+        return _orig_gen(self, state)
+
+    _system_instance._generate_equipment_diagram = types.MethodType(
+        _patched_gen, _system_instance)
     print("[OK] Training system ready.")
+
     p = _start_server(str(_STATIC), port)
     _write_viewer_html(_STATIC)
     url = f"http://127.0.0.1:{p}/viewer.html"
@@ -837,12 +1070,11 @@ def start_game(secom_data_path: str, use_ai_mentor: bool = True,
 
 def create_firstperson_interface(secom_data_path: str,
                                   use_ai_mentor: bool = True):
-    """向下相容的包裝器，回傳可呼叫 .launch() 的物件。"""
     url = start_game(secom_data_path, use_ai_mentor)
 
     class _FakeDemo:
         def launch(self, **kwargs):
-            import webbrowser, time
+            import webbrowser
             print(f"\n[GAME] Opening: {url}")
             webbrowser.open(url)
             print("Press Ctrl+C to stop.\n")
