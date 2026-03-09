@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#050d1a;overflow:hidden;width:100vw;height:100vh;}
+#tip{position:fixed;display:none;background:rgba(0,6,18,.92);
+     color:#ffa500;padding:6px 14px;border-radius:6px;
+     font:12px Consolas,monospace;border:1px solid rgba(255,165,0,.33);
+     pointer-events:none;z-index:99;white-space:nowrap;}
+#hud{position:fixed;top:10px;left:10px;
+     background:rgba(0,6,18,.8);color:#4af;
+     padding:6px 12px;border-radius:6px;
+     font:11px Consolas,monospace;border:1px solid #2a5a9c;
+     pointer-events:none;letter-spacing:.5px;}
+#loading{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+         color:#4af;font:14px Consolas,monospace;text-align:center;}
+#pct{margin-top:8px;font-size:22px;color:#ffa500;}
+#xhair{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+       width:22px;height:22px;pointer-events:none;opacity:0.5;}
+#xhair::before,#xhair::after{content:'';position:absolute;background:#ffa500;}
+#xhair::before{width:2px;height:100%;left:50%;transform:translateX(-50%);}
+#xhair::after{width:100%;height:2px;top:50%;transform:translateY(-50%);}
+</style>
+</head>
+<body>
+<div id="loading">
+  ⏳ 載入 3D 模型中…
+  <div id="pct">0%</div>
+  <small style="color:#5a8a9a;margin-top:8px;display:block;">移動滑鼠旋轉 | 滾輪縮放 | 點擊部件檢查</small>
+</div>
+<div id="tip"></div>
+<div id="hud">👁 點擊設備部件進行檢查</div>
+<div id="xhair"></div>
+
+<!-- Three.js r128 global build (non-module) — most reliable in iframe context -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+var MA = {
+  Stage_Base:'查看晶圓載台位置誤差',
+  'Rail_-0.6':'查看晶圓載台位置誤差',
+  'Rail_0.0':'查看晶圓載台位置誤差',
+  'Rail_0.6':'查看晶圓載台位置誤差',
+  Wafer_Chuck:'查看晶圓載台位置誤差',
+  Wafer:'查看晶圓載台位置誤差',
+  Label_Stage:'查看晶圓載台位置誤差',
+  POB_Barrel:'檢查投影鏡組溫度',
+  POB_Top_Cap:'檢查投影鏡組溫度',
+  POB_Bottom:'檢查投影鏡組溫度',
+  Label_POB:'檢查投影鏡組溫度',
+  Illum_Barrel:'查看光源強度和穩定性',
+  Label_Illum:'查看光源強度和穩定性',
+  Laser_Box:'查看光源強度和穩定性',
+  Laser_Vent:'查看光源強度和穩定性',
+  Laser_Out:'查看光源強度和穩定性',
+  Label_Laser:'查看光源強度和穩定性',
+  Beam_H1:'查看光源強度和穩定性',
+  Beam_V1:'查看光源強度和穩定性',
+  Beam_H2:'查看光源強度和穩定性',
+  Beam_V2:'查看光源強度和穩定性',
+  Beam_Spot:'查看光源強度和穩定性',
+  Mirror1:'查看光源強度和穩定性',
+  Mirror2:'查看光源強度和穩定性',
+  Mirror3:'查看光源強度和穩定性',
+  Immersion_Hood:'檢查冷卻水流量和溫度',
+  Immersion_Supply:'檢查冷卻水流量和溫度',
+  Immersion_Return:'檢查冷卻水流量和溫度',
+  Label_Immersion:'檢查冷卻水流量和溫度',
+  Duct_Top:'檢查真空系統壓力',
+  Duct_Vent1:'檢查真空系統壓力',
+  Duct_Vent2:'檢查真空系統壓力',
+  Cabinet_Main:'查看控制系統狀態',
+  Cabinet_Panel:'查看控制系統狀態',
+  Screen:'查看控制系統狀態',
+  Keyboard:'查看控制系統狀態',
+  FOUP_Port:'確認晶圓傳送狀態',
+  FOUP_Door:'確認晶圓傳送狀態',
+  Label_FOUP:'確認晶圓傳送狀態'
+};
+var ML = {
+  Stage_Base:'晶圓載台','Rail_-0.6':'晶圓載台',
+  'Rail_0.0':'晶圓載台','Rail_0.6':'晶圓載台',
+  Wafer_Chuck:'晶圓載台',Wafer:'晶圓載台',
+  Label_Stage:'晶圓載台',
+  POB_Barrel:'投影鏡組',POB_Top_Cap:'投影鏡組',
+  POB_Bottom:'投影鏡組',Label_POB:'投影鏡組',
+  Illum_Barrel:'照明系統',Label_Illum:'照明系統',
+  Laser_Box:'雷射光源',Laser_Vent:'雷射光源',
+  Laser_Out:'雷射光源',Label_Laser:'雷射光源',
+  Beam_H1:'DUV光束',Beam_V1:'DUV光束',
+  Beam_H2:'DUV光束',Beam_V2:'DUV光束',Beam_Spot:'DUV光束',
+  Mirror1:'反射鏡',Mirror2:'反射鏡',Mirror3:'反射鏡',
+  Immersion_Hood:'液浸冷卻',Immersion_Supply:'液浸冷卻',
+  Immersion_Return:'液浸冷卻',Label_Immersion:'液浸冷卻',
+  Duct_Top:'通風排氣',Duct_Vent1:'通風排氣',
+  Duct_Vent2:'通風排氣',
+  Cabinet_Main:'控制系統',Cabinet_Panel:'控制系統',
+  Screen:'控制系統',Keyboard:'控制系統',
+  FOUP_Port:'晶圓傳送',FOUP_Door:'晶圓傳送',
+  Label_FOUP:'晶圓傳送'
+};
+(function(){
+  for(var i=0;i<10;i++){MA['Lens_'+i]='檢查投影鏡組溫度';ML['Lens_'+i]='投影鏡組';}
+  for(var i=0;i<6;i++){MA['IllumLens_'+i]='查看光源強度和穩定性';ML['IllumLens_'+i]='照明系統';}
+})();
+
+// ── Scene ──
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050d1a);
+
+var renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+var camera = new THREE.PerspectiveCamera(55,window.innerWidth/window.innerHeight,0.01,200);
+camera.position.set(0,1.2,6);
+
+// ── Lights ──
+scene.add(new THREE.AmbientLight(0xffffff,0.7));
+var sun = new THREE.DirectionalLight(0xffffff,1.4);
+sun.position.set(6,10,6); sun.castShadow=true;
+scene.add(sun);
+var fill = new THREE.DirectionalLight(0x4488ff,0.35);
+fill.position.set(-6,3,-6); scene.add(fill);
+var rim = new THREE.DirectionalLight(0xffeedd,0.2);
+rim.position.set(0,-3,-8); scene.add(rim);
+
+// ── Controls ──
+var controls = new THREE.OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true; controls.dampingFactor=0.06;
+controls.minDistance=0.5; controls.maxDistance=20;
+
+// ── Load GLB from same origin ──
+var loader = new THREE.GLTFLoader();
+loader.load('./asml_duv.glb',
+  function(gltf){
+    var loadEl=document.getElementById('loading');
+    if(loadEl) loadEl.remove();
+    var model=gltf.scene;
+    model.traverse(function(o){
+      if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}
+    });
+    scene.add(model);
+    var box=new THREE.Box3().setFromObject(model);
+    var center=box.getCenter(new THREE.Vector3());
+    var size=box.getSize(new THREE.Vector3());
+    var maxDim=Math.max(size.x,size.y,size.z);
+    controls.target.copy(center);
+    camera.position.set(center.x,center.y+size.y*0.15,center.z+maxDim*1.6);
+    controls.update();
+  },
+  function(xhr){
+    if(xhr.total>0){
+      var pct=Math.round(xhr.loaded/xhr.total*100);
+      var el=document.getElementById('pct');
+      if(el) el.textContent=pct+'%';
+    }
+  },
+  function(err){
+    var el=document.getElementById('loading');
+    if(el) el.innerHTML='<span style="color:#f44">❌ 模型載入失敗</span><br><small style="color:#888">'+err+'</small>';
+    console.error('GLB error:',err);
+  }
+);
+
+// ── Raycasting ──
+var raycaster=new THREE.Raycaster();
+var mouse=new THREE.Vector2(-9,-9);
+var hoveredMesh=null;
+var origMats=new Map();
+var hlMat=new THREE.MeshStandardMaterial({color:0xffa500,emissive:0x331100,metalness:0.3,roughness:0.4});
+
+function getAction(obj){
+  var o=obj;
+  while(o){if(MA[o.name])return[ML[o.name]||o.name,MA[o.name]];o=o.parent;}
+  return null;
+}
+
+var tip=document.getElementById('tip');
+
+window.addEventListener('mousemove',function(e){
+  mouse.x=(e.clientX/window.innerWidth)*2-1;
+  mouse.y=-(e.clientY/window.innerHeight)*2+1;
+});
+
+window.addEventListener('click',function(){
+  var meshes=[];
+  scene.traverse(function(o){if(o.isMesh)meshes.push(o);});
+  raycaster.setFromCamera(mouse,camera);
+  var hits=raycaster.intersectObjects(meshes);
+  if(hits.length>0){
+    var act=getAction(hits[0].object);
+    if(act){
+      window.parent.postMessage({type:'fpClick',label:act[0],action:act[1]},'*');
+      var el=document.getElementById('hud');
+      el.textContent='✅ '+act[0]+' — 已送出';
+      el.style.color='#4f4';
+      setTimeout(function(){
+        el.textContent='👁 點擊設備部件進行檢查';
+        el.style.color='#4af';
+      },1500);
+    }
+  }
+});
+
+// ── Render loop ──
+function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  var meshes=[];
+  scene.traverse(function(o){if(o.isMesh)meshes.push(o);});
+  raycaster.setFromCamera(mouse,camera);
+  var hits=raycaster.intersectObjects(meshes);
+  if(hoveredMesh){
+    hoveredMesh.material=origMats.get(hoveredMesh);
+    hoveredMesh=null; tip.style.display='none';
+  }
+  if(hits.length>0){
+    var obj=hits[0].object;
+    var act=getAction(obj);
+    if(act){
+      if(!origMats.has(obj))origMats.set(obj,obj.material);
+      obj.material=hlMat; hoveredMesh=obj;
+      tip.style.display='block';
+      tip.style.left=(window.innerWidth/2+24)+'px';
+      tip.style.top=(window.innerHeight/2-32)+'px';
+      tip.textContent='🔍 '+act[0]+'  —  點擊檢查';
+    }
+  }
+  renderer.render(scene,camera);
+}
+animate();
+
+window.addEventListener('resize',function(){
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+});
+</script>
+</body>
+</html>
