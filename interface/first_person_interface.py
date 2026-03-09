@@ -658,6 +658,8 @@ window.onerror=function(msg,src,line,col,err){
 
 // ── Mesh action / label maps ──────────────────────────────────────────────────
 var MA={
+  Reticle_Stage_Mesh:'查看光罩載台狀態',Reticle_Mesh:'查看光罩載台狀態',
+  Robot_Arm_Link_Mesh:'查看晶圓傳送機械手臂',
   Stage_Base:'查看晶圓載台位置誤差','Rail_-0.6':'查看晶圓載台位置誤差',
   'Rail_0.0':'查看晶圓載台位置誤差','Rail_0.6':'查看晶圓載台位置誤差',
   Wafer_Chuck:'查看晶圓載台位置誤差',Wafer:'查看晶圓載台位置誤差',
@@ -680,6 +682,8 @@ var MA={
   HMI_Screen:'HMI'
 };
 var ML={
+  Reticle_Stage_Mesh:'光罩載台',Reticle_Mesh:'光罩載台',
+  Robot_Arm_Link_Mesh:'晶圓傳送手臂',
   Stage_Base:'晶圓載台','Rail_-0.6':'晶圓載台','Rail_0.0':'晶圓載台',
   'Rail_0.6':'晶圓載台',Wafer_Chuck:'晶圓載台',Wafer:'晶圓載台',Label_Stage:'晶圓載台',
   POB_Barrel:'投影鏡組',POB_Top_Cap:'投影鏡組',POB_Bottom:'投影鏡組',Label_POB:'投影鏡組',
@@ -695,6 +699,8 @@ var ML={
   HMI_Screen:'HMI 控制面板'
 };
 var DESC={
+  '光罩載台':'精密光罩（Reticle）定位台，承載石英光罩在掃描曝光時做同步往復移動。光罩移動精度決定圖案縮放比例與CD 均一性。',
+  '晶圓傳送手臂':'SCARA 機械手臂，負責從 FOUP 取出晶圓後精確放置到晶圓載台。終端效應器（End Effector）採用伯努利原理無接觸夾持。',
   '晶圓載台':'精密定位平台，負責承載並精確移動晶圓。位置精度須達奈米等級，任何震動或溫度變化都會影響對準精度。',
   '投影鏡組':'核心光學系統，將光罩圖案縮小投影至晶圓。鏡組溫度變化 0.01°C 即可能造成對焦偏移。',
   '雷射光源':'KrF 準分子雷射（248nm），提供曝光所需深紫外線。能量穩定性直接影響線寬均一性。',
@@ -717,7 +723,9 @@ var QUICK_ACTIONS={
   '晶圓傳送':['確認晶圓傳送狀態','重新對準傳送手臂','檢查 FOUP 鎖定'],
   '通風排氣':['檢查真空系統壓力','清潔排氣過濾器','查看氣流量'],
   'DUV光束':['查看光源強度和穩定性','對準光束路徑','檢查光束擋板'],
-  '反射鏡':['查看光源強度和穩定性','清潔反射鏡面','檢查反射率']
+  '反射鏡':['查看光源強度和穩定性','清潔反射鏡面','檢查反射率'],
+  '光罩載台':['查看光罩載台狀態','檢查光罩對準精度','更換光罩','查看光罩掃描速度'],
+  '晶圓傳送手臂':['確認晶圓傳送狀態','重新對準傳送手臂','查看手臂馬達電流','檢查 End Effector']
 };
 (function(){
   for(var i=0;i<10;i++){MA['Lens_'+i]='檢查投影鏡組溫度';ML['Lens_'+i]='投影鏡組';}
@@ -861,6 +869,8 @@ loader.load('./asml_duv.glb',
         console.log('[OK] Playing',gltf.animations.length,'animations:',
           gltf.animations.map(function(a){return a.name;}).join(', '));
       }
+      // 建立程序化幾何（光罩載台、機械手臂等）
+      createProcObjects(model);
     }catch(e){
       var el=document.getElementById('loading-screen');
       if(el)el.innerHTML='<div style="color:#f44;text-align:center;padding:20px;">❌ 模型處理錯誤<br><small style="color:#888">'+e.message+'</small></div>';
@@ -1156,11 +1166,202 @@ function startTick(){
   },8000);
 }
 
+// ── Procedural 3D Objects（光罩載台 + 機械手臂）─────────────────────────────
+var procObjs={};
+var sceneMeshMap={};
+var beamPtLight=null;
+var procElapsed=0;
+
+function createProcObjects(model){
+  // 建立 GLB 節點名稱 → Three.js Object 對照表
+  model.traverse(function(o){if(o.name)sceneMeshMap[o.name]=o;});
+
+  // ── 材質 ──────────────────────────────────────────────────────────────────
+  var metalMat=new THREE.MeshStandardMaterial({color:0x8899aa,metalness:.75,roughness:.25});
+  var darkMetal=new THREE.MeshStandardMaterial({color:0x334455,metalness:.8,roughness:.2});
+  var silicaMat=new THREE.MeshStandardMaterial({color:0x4466cc,metalness:.4,roughness:.1,transparent:true,opacity:.85});
+  var maskMat=new THREE.MeshStandardMaterial({color:0x110022,metalness:.1,roughness:.2,transparent:true,opacity:.9});
+  var markMat=new THREE.MeshStandardMaterial({color:0xcc88ff,emissive:0x440066});
+  var uvMat=new THREE.MeshStandardMaterial({color:0x8800ff,emissive:0x5500cc,transparent:true,opacity:.55});
+  var glowMat=new THREE.MeshStandardMaterial({color:0xaa44ff,emissive:0x7700ff,transparent:true,opacity:.7});
+
+  // ── 光罩載台（Reticle Stage）───────────────────────────────────────────────
+  // 平台本體
+  var rs=new THREE.Mesh(new THREE.BoxGeometry(.52,.06,.52),metalMat.clone());
+  rs.name='Reticle_Stage_Mesh';rs.position.set(.10,2.05,-.10);rs.castShadow=true;
+  scene.add(rs);procObjs.rs=rs;allMeshes.push(rs);
+  // 台面邊框線條
+  var rsEdge=new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(.52,.06,.52)),
+    new THREE.LineBasicMaterial({color:0x4488cc}));
+  rsEdge.position.copy(rs.position);scene.add(rsEdge);
+  // 光罩（薄方形石英板）
+  var rm=new THREE.Mesh(new THREE.BoxGeometry(.28,.006,.28),maskMat);
+  rm.name='Reticle_Mesh';rm.position.set(.10,2.088,-.10);
+  scene.add(rm);procObjs.rm=rm;allMeshes.push(rm);
+  // 光罩圖案標記（十字）
+  var rm1=new THREE.Mesh(new THREE.BoxGeometry(.26,.007,.015),markMat);
+  rm1.position.set(.10,2.091,-.10);scene.add(rm1);
+  var rm2=new THREE.Mesh(new THREE.BoxGeometry(.015,.007,.26),markMat);
+  rm2.position.set(.10,2.091,-.10);scene.add(rm2);
+  procObjs.rmMarks=[rm1,rm2];
+  // 光罩載台支撐柱（4 角）
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(d){
+    var col=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,.16,8),darkMetal.clone());
+    col.position.set(.10+d[0]*.20,1.98,-.10+d[1]*.20);scene.add(col);
+  });
+  // 光罩掃描滑軌
+  var rail=new THREE.Mesh(new THREE.BoxGeometry(.02,.02,.58),darkMetal.clone());
+  rail.position.set(.10,2.06,-.10);scene.add(rail);
+
+  // ── 機械手臂（Robot Arm）──────────────────────────────────────────────────
+  // 底座圓柱
+  var rbBase=new THREE.Mesh(new THREE.CylinderGeometry(.065,.085,.36,12),metalMat.clone());
+  rbBase.position.set(-1.20,.53,.52);rbBase.castShadow=true;scene.add(rbBase);
+  procObjs.rbBase=rbBase;
+  // 轉台
+  var rbTurret=new THREE.Mesh(new THREE.CylinderGeometry(.07,.07,.06,12),darkMetal.clone());
+  rbTurret.position.set(-1.20,.74,.52);scene.add(rbTurret);procObjs.rbTurret=rbTurret;
+  // 主臂（水平，會在 x 方向伸縮）
+  var rbLink=new THREE.Mesh(new THREE.BoxGeometry(.55,.05,.06),metalMat.clone());
+  rbLink.name='Robot_Arm_Link_Mesh';rbLink.position.set(-1.20,.82,.52);rbLink.castShadow=true;
+  scene.add(rbLink);procObjs.rbLink=rbLink;allMeshes.push(rbLink);
+  // 次臂（前端）
+  var rbLink2=new THREE.Mesh(new THREE.BoxGeometry(.35,.04,.06),darkMetal.clone());
+  rbLink2.position.set(-.90,.82,.52);scene.add(rbLink2);procObjs.rbLink2=rbLink2;
+  // 末端夾持器（End Effector — 叉狀）
+  var ef1=new THREE.Mesh(new THREE.BoxGeometry(.30,.01,.02),metalMat.clone());
+  ef1.position.set(-.62,.82,.55);scene.add(ef1);procObjs.ef1=ef1;
+  var ef2=new THREE.Mesh(new THREE.BoxGeometry(.30,.01,.02),metalMat.clone());
+  ef2.position.set(-.62,.82,.49);scene.add(ef2);procObjs.ef2=ef2;
+  // 機械手臂上的晶圓（傳送中可見）
+  var rbWafer=new THREE.Mesh(new THREE.CylinderGeometry(.148,.148,.008,32),silicaMat.clone());
+  rbWafer.name='Robot_Wafer_Mesh';rbWafer.position.set(-.62,.83,.52);rbWafer.visible=false;
+  scene.add(rbWafer);procObjs.rbWafer=rbWafer;
+
+  // ── UV 光束視覺化 ──────────────────────────────────────────────────────────
+  // 主光束柱（從鏡組底部到晶圓）
+  var beamCyl=new THREE.Mesh(new THREE.CylinderGeometry(.006,.03,.52,8),uvMat.clone());
+  beamCyl.position.set(.10,.22,-.10);beamCyl.visible=false;
+  scene.add(beamCyl);procObjs.beamCyl=beamCyl;
+  // 曝光光暈（晶圓面的圓形發光）
+  var beamSpot=new THREE.Mesh(new THREE.CircleGeometry(.06,32),glowMat.clone());
+  beamSpot.rotation.x=-Math.PI/2;beamSpot.position.set(.10,.442,-.10);beamSpot.visible=false;
+  scene.add(beamSpot);procObjs.beamSpotGlow=beamSpot;
+  // 點光源（光線照明效果）
+  beamPtLight=new THREE.PointLight(0x9900ff,0,1.2);
+  beamPtLight.position.set(.10,.44,-.10);scene.add(beamPtLight);
+
+  console.log('[OK] Procedural objects created: Reticle Stage + Robot Arm + UV Beam');
+}
+
+// ── 製程順序動畫（32s 循環）──────────────────────────────────────────────────
+// 時序：FOUP開→手臂取片→傳到載台→對準曝光→手臂取片→FOUP關
+var PROC_T=32;
+
+function _eio(t){return t<.5?2*t*t:(4-2*t)*t-1;}  // ease-in-out
+function _c01(t){return Math.max(0,Math.min(1,t));}
+function _ph(t,s,e){return _eio(_c01((t-s)/(e-s)));}  // phase 0→1 with ease
+
+function updateProcessAnim(dt){
+  if(!procObjs.rs||!gameStarted)return;
+  procElapsed=(procElapsed+dt)%PROC_T;
+  var t=procElapsed;
+
+  // 找 GLB 節點
+  var foupDoor=sceneMeshMap['FOUP_Door'];
+  var wChuck=sceneMeshMap['Wafer_Chuck'];
+  var wWafer=sceneMeshMap['Wafer'];
+
+  // ── 0~2s: FOUP 門開 ────────────────────────────────────────────────────────
+  if(foupDoor){
+    var fp=_ph(t,0,2)-_ph(t,25,27);
+    foupDoor.position.y=0.82+fp*0.35;
+  }
+
+  // ── 機械手臂整體動作（伸縮 + 旋轉）──────────────────────────────────────
+  var extP =_ph(t,2,5.5);   // 伸出
+  var retP =_ph(t,19.5,23); // 縮回
+  var netExt=extP-retP;     // 0=縮回，1=完全伸出
+
+  // 主臂：從 x=-1.20 伸到 x=-0.75，次臂到 x=-0.45
+  if(procObjs.rbLink){
+    procObjs.rbLink.position.x=-1.20+netExt*0.55;
+    procObjs.rbLink.scale.x=1+netExt*0.65;
+  }
+  if(procObjs.rbLink2){
+    procObjs.rbLink2.position.x=-.90+netExt*0.60;
+    procObjs.rbLink2.scale.x=1+netExt*0.55;
+  }
+  // 末端夾持器（End Effector）跟著移動
+  var efX=-.62+netExt*1.0;  // 往 +x 移動到 Chuck 位置 (-0.3 area)
+  var efZ=0.52-netExt*0.62; // 往 -z 移動到 Chuck z=-.10
+  if(procObjs.ef1){procObjs.ef1.position.set(efX,.82,efZ+0.03);}
+  if(procObjs.ef2){procObjs.ef2.position.set(efX,.82,efZ-0.03);}
+
+  // ── 機械手臂上的晶圓 ────────────────────────────────────────────────────
+  // 3.5~8s：可見，手臂取片後移到 Chuck；19s~23s：取回片子回 FOUP
+  var rwShow=(t>=3.5&&t<8.5)||(t>=19.5&&t<23.5);
+  if(procObjs.rbWafer){
+    procObjs.rbWafer.visible=rwShow;
+    if(rwShow){
+      procObjs.rbWafer.position.set(efX,.845,efZ);
+    }
+  }
+
+  // ── 8~19s: 晶圓在載台上，做掃描 ────────────────────────────────────────
+  // (GLB 既有的 Wafer_Chuck 動畫已有基本位移，這裡做掃描疊加)
+  var scanning=(t>=9&&t<19);
+  if(wChuck&&wWafer){
+    if(scanning){
+      var sp=_c01((t-9)/10);
+      // 步進掃描（Scan field pattern）
+      var scanX=0.1+0.09*Math.sin(sp*Math.PI*7)*Math.cos(sp*Math.PI*0.5);
+      var scanZ=-.10+0.07*Math.cos(sp*Math.PI*5)*Math.sin(sp*Math.PI*0.7);
+      wChuck.position.x=scanX; wWafer.position.x=scanX;
+      wChuck.position.z=scanZ; wWafer.position.z=scanZ;
+    } else if(t<8||t>=20){
+      wChuck.position.x=-.30; wChuck.position.z=0.0;
+      wWafer.position.x=-.30; wWafer.position.z=0.0;
+    }
+  }
+
+  // ── 10~19s: UV 曝光光束 ─────────────────────────────────────────────────
+  var exposing=(t>=10&&t<19);
+  if(procObjs.beamCyl){procObjs.beamCyl.visible=exposing;}
+  if(procObjs.beamSpotGlow){procObjs.beamSpotGlow.visible=exposing;}
+  if(beamPtLight){
+    if(exposing){
+      var pulse=0.5+0.5*Math.sin(t*Math.PI*12); // 快速脈衝（模擬掃描曝光）
+      beamPtLight.intensity=pulse*2.0;
+      if(procObjs.beamCyl)procObjs.beamCyl.material.opacity=0.25+pulse*0.45;
+      if(procObjs.beamSpotGlow)procObjs.beamSpotGlow.material.opacity=0.4+pulse*0.5;
+      // 光束追蹤載台
+      if(wChuck){
+        procObjs.beamCyl.position.x=wChuck.position.x;
+        procObjs.beamCyl.position.z=wChuck.position.z;
+        procObjs.beamSpotGlow.position.x=wChuck.position.x;
+        procObjs.beamSpotGlow.position.z=wChuck.position.z;
+        beamPtLight.position.x=wChuck.position.x;
+        beamPtLight.position.z=wChuck.position.z;
+      }
+    } else {beamPtLight.intensity=0;}
+  }
+
+  // ── 10~19s: 光罩掃描（Y 軸小幅往復）────────────────────────────────────
+  if(procObjs.rm&&procObjs.rmMarks){
+    var rmY=exposing?2.088+0.012*Math.sin(t*Math.PI*3.5):2.088;
+    procObjs.rm.position.y=rmY;
+    procObjs.rmMarks.forEach(function(m){m.position.y=rmY+0.003;});
+  }
+}
+
 // ── Render loop ───────────────────────────────────────────────────────────────
 function animate(){
   requestAnimationFrame(animate);
   var dt=clock.getDelta();
   if(mixer)mixer.update(dt); // GLB animations
+  updateProcessAnim(dt);     // 製程順序動畫
   // Movement
   if(controls.isLocked&&gameStarted){
     velocity.x-=velocity.x*9*dt;velocity.z-=velocity.z*9*dt;
