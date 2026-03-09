@@ -760,6 +760,7 @@ var gameStarted=false,chatFocus=false,inspecting=false,hmiOpen=false;
 var allMeshes=[],hoveredObj=null,origMats=new Map();
 var hlMat=new THREE.MeshStandardMaterial({color:0xffa500,emissive:0x220800,metalness:.3,roughness:.5});
 var raycaster=new THREE.Raycaster();raycaster.far=9;
+var mixer=null; // GLB AnimationMixer
 function getInfo(obj){var o=obj;while(o){if(MA[o.name])return{label:ML[o.name]||o.name,action:MA[o.name]};o=o.parent;}return null;}
 
 // ── HMI Screen (canvas texture) ───────────────────────────────────────────────
@@ -849,6 +850,17 @@ loader.load('./asml_duv.glb',
       var r=Math.max(s.x,s.z)*0.85;
       camera.position.set(r,1.6,r);
       camera.lookAt(new THREE.Vector3(0,s.y*0.4,0));
+      // ── 播放 GLB 動畫 ──────────────────────────────────────────
+      if(gltf.animations&&gltf.animations.length>0){
+        mixer=new THREE.AnimationMixer(model);
+        gltf.animations.forEach(function(clip){
+          var action=mixer.clipAction(clip);
+          action.setLoop(THREE.LoopRepeat,Infinity);
+          action.play();
+        });
+        console.log('[OK] Playing',gltf.animations.length,'animations:',
+          gltf.animations.map(function(a){return a.name;}).join(', '));
+      }
     }catch(e){
       var el=document.getElementById('loading-screen');
       if(el)el.innerHTML='<div style="color:#f44;text-align:center;padding:20px;">❌ 模型處理錯誤<br><small style="color:#888">'+e.message+'</small></div>';
@@ -1148,6 +1160,7 @@ function startTick(){
 function animate(){
   requestAnimationFrame(animate);
   var dt=clock.getDelta();
+  if(mixer)mixer.update(dt); // GLB animations
   // Movement
   if(controls.isLocked&&gameStarted){
     velocity.x-=velocity.x*9*dt;velocity.z-=velocity.z*9*dt;
