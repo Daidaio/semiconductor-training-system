@@ -1173,7 +1173,6 @@ var beamPtLight=null;
 var procElapsed=0;
 
 function createProcObjects(model){
-  // 建立 GLB 節點名稱 → Three.js Object 對照表
   model.traverse(function(o){if(o.name)sceneMeshMap[o.name]=o;});
 
   // ── 材質 ──────────────────────────────────────────────────────────────────
@@ -1185,74 +1184,121 @@ function createProcObjects(model){
   var uvMat=new THREE.MeshStandardMaterial({color:0x8800ff,emissive:0x5500cc,transparent:true,opacity:.55});
   var glowMat=new THREE.MeshStandardMaterial({color:0xaa44ff,emissive:0x7700ff,transparent:true,opacity:.7});
 
-  // ── 光罩載台（Reticle Stage）───────────────────────────────────────────────
-  // 平台本體
+  // ── 取得關鍵 GLB 節點的「世界座標」────────────────────────────────────────
+  // GLB 節點是 model 的子物件，.position 是局部座標；
+  // 必須用 getWorldPosition() 才能取得正確世界座標
+  var pobTop  = sceneMeshMap['POB_Top_Cap'];
+  var pobBot  = sceneMeshMap['POB_Bottom'];
+  var wChuck  = sceneMeshMap['Wafer_Chuck'];
+  var foupPort= sceneMeshMap['FOUP_Port'];
+
+  var pobTopW =new THREE.Vector3(); var pobBotW=new THREE.Vector3();
+  var chuckW  =new THREE.Vector3(); var foupW  =new THREE.Vector3();
+  if(pobTop) pobTop.getWorldPosition(pobTopW);   else pobTopW.set(0.64,2.19,0.12);
+  if(pobBot) pobBot.getWorldPosition(pobBotW);   else pobBotW.set(0.64,0.71,0.12);
+  if(wChuck) wChuck.getWorldPosition(chuckW);    else chuckW.set(0.24,0.62,0.12);
+  if(foupPort)foupPort.getWorldPosition(foupW);  else foupW.set(-0.93,1.04,0.64);
+
+  // 儲存動畫用基準位置
+  procObjs.chuckW  = chuckW.clone();   // 晶圓夾頭世界座標（靜止時）
+  procObjs.pobBotW = pobBotW.clone();  // 鏡組底部（光束起點）
+
+  console.log('[DBG] chuckW:',chuckW.x.toFixed(2),chuckW.y.toFixed(2),chuckW.z.toFixed(2),
+              '  pobTopW:',pobTopW.x.toFixed(2),pobTopW.y.toFixed(2),pobTopW.z.toFixed(2));
+
+  // ── 光罩載台（Reticle Stage）──────────────────────────────────────────────
+  // 放在 POB_Top_Cap 正上方 0.18m
+  var rsCX=pobTopW.x, rsCZ=pobTopW.z, rsY=pobTopW.y+0.18;
+
   var rs=new THREE.Mesh(new THREE.BoxGeometry(.52,.06,.52),metalMat.clone());
-  rs.name='Reticle_Stage_Mesh';rs.position.set(.10,2.05,-.10);rs.castShadow=true;
+  rs.name='Reticle_Stage_Mesh';rs.position.set(rsCX,rsY,rsCZ);rs.castShadow=true;
   scene.add(rs);procObjs.rs=rs;allMeshes.push(rs);
-  // 台面邊框線條
+
   var rsEdge=new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(.52,.06,.52)),
     new THREE.LineBasicMaterial({color:0x4488cc}));
   rsEdge.position.copy(rs.position);scene.add(rsEdge);
+
   // 光罩（薄方形石英板）
+  var rmBaseY=rsY+0.038;
   var rm=new THREE.Mesh(new THREE.BoxGeometry(.28,.006,.28),maskMat);
-  rm.name='Reticle_Mesh';rm.position.set(.10,2.088,-.10);
-  scene.add(rm);procObjs.rm=rm;allMeshes.push(rm);
-  // 光罩圖案標記（十字）
+  rm.name='Reticle_Mesh';rm.position.set(rsCX,rmBaseY,rsCZ);
+  scene.add(rm);procObjs.rm=rm;procObjs.rmBaseY=rmBaseY;allMeshes.push(rm);
+
+  // 光罩圖案標記（十字線）
   var rm1=new THREE.Mesh(new THREE.BoxGeometry(.26,.007,.015),markMat);
-  rm1.position.set(.10,2.091,-.10);scene.add(rm1);
+  rm1.position.set(rsCX,rmBaseY+0.003,rsCZ);scene.add(rm1);
   var rm2=new THREE.Mesh(new THREE.BoxGeometry(.015,.007,.26),markMat);
-  rm2.position.set(.10,2.091,-.10);scene.add(rm2);
-  procObjs.rmMarks=[rm1,rm2];
-  // 光罩載台支撐柱（4 角）
+  rm2.position.set(rsCX,rmBaseY+0.003,rsCZ);scene.add(rm2);
+  procObjs.rmMarks=[rm1,rm2];procObjs.rmMarkBaseY=rmBaseY+0.003;
+
+  // 光罩載台支撐柱（4角）
   [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(d){
     var col=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,.16,8),darkMetal.clone());
-    col.position.set(.10+d[0]*.20,1.98,-.10+d[1]*.20);scene.add(col);
+    col.position.set(rsCX+d[0]*.20,rsY-0.05,rsCZ+d[1]*.20);scene.add(col);
   });
-  // 光罩掃描滑軌
   var rail=new THREE.Mesh(new THREE.BoxGeometry(.02,.02,.58),darkMetal.clone());
-  rail.position.set(.10,2.06,-.10);scene.add(rail);
+  rail.position.set(rsCX,rsY+0.01,rsCZ);scene.add(rail);
 
   // ── 機械手臂（Robot Arm）──────────────────────────────────────────────────
-  // 底座圓柱
+  // 底座靠近 FOUP，高度與晶圓夾頭相符
+  var armBX=foupW.x+0.28, armBZ=foupW.z-0.18, armBY=chuckW.y-0.30;
+  // End Effector 移動起點（FOUP 側）→ 終點（Chuck 正上方）
+  procObjs.efStart=new THREE.Vector3(armBX+0.18, chuckW.y+0.05, armBZ+0.05);
+  procObjs.efEnd  =new THREE.Vector3(chuckW.x,   chuckW.y+0.04, chuckW.z);
+
   var rbBase=new THREE.Mesh(new THREE.CylinderGeometry(.065,.085,.36,12),metalMat.clone());
-  rbBase.position.set(-1.20,.53,.52);rbBase.castShadow=true;scene.add(rbBase);
-  procObjs.rbBase=rbBase;
-  // 轉台
+  rbBase.position.set(armBX,armBY,armBZ);rbBase.castShadow=true;
+  scene.add(rbBase);procObjs.rbBase=rbBase;
+
   var rbTurret=new THREE.Mesh(new THREE.CylinderGeometry(.07,.07,.06,12),darkMetal.clone());
-  rbTurret.position.set(-1.20,.74,.52);scene.add(rbTurret);procObjs.rbTurret=rbTurret;
-  // 主臂（水平，會在 x 方向伸縮）
+  rbTurret.position.set(armBX,chuckW.y+0.02,armBZ);
+  scene.add(rbTurret);procObjs.rbTurret=rbTurret;
+
   var rbLink=new THREE.Mesh(new THREE.BoxGeometry(.55,.05,.06),metalMat.clone());
-  rbLink.name='Robot_Arm_Link_Mesh';rbLink.position.set(-1.20,.82,.52);rbLink.castShadow=true;
+  rbLink.name='Robot_Arm_Link_Mesh';
+  rbLink.position.set(armBX,chuckW.y+0.04,armBZ);rbLink.castShadow=true;
   scene.add(rbLink);procObjs.rbLink=rbLink;allMeshes.push(rbLink);
-  // 次臂（前端）
+
   var rbLink2=new THREE.Mesh(new THREE.BoxGeometry(.35,.04,.06),darkMetal.clone());
-  rbLink2.position.set(-.90,.82,.52);scene.add(rbLink2);procObjs.rbLink2=rbLink2;
-  // 末端夾持器（End Effector — 叉狀）
+  rbLink2.position.set(armBX+0.35,chuckW.y+0.04,armBZ);
+  scene.add(rbLink2);procObjs.rbLink2=rbLink2;
+
   var ef1=new THREE.Mesh(new THREE.BoxGeometry(.30,.01,.02),metalMat.clone());
-  ef1.position.set(-.62,.82,.55);scene.add(ef1);procObjs.ef1=ef1;
+  ef1.position.set(procObjs.efStart.x,procObjs.efStart.y,procObjs.efStart.z+0.03);
+  scene.add(ef1);procObjs.ef1=ef1;
   var ef2=new THREE.Mesh(new THREE.BoxGeometry(.30,.01,.02),metalMat.clone());
-  ef2.position.set(-.62,.82,.49);scene.add(ef2);procObjs.ef2=ef2;
-  // 機械手臂上的晶圓（傳送中可見）
+  ef2.position.set(procObjs.efStart.x,procObjs.efStart.y,procObjs.efStart.z-0.03);
+  scene.add(ef2);procObjs.ef2=ef2;
+
   var rbWafer=new THREE.Mesh(new THREE.CylinderGeometry(.148,.148,.008,32),silicaMat.clone());
-  rbWafer.name='Robot_Wafer_Mesh';rbWafer.position.set(-.62,.83,.52);rbWafer.visible=false;
+  rbWafer.name='Robot_Wafer_Mesh';
+  rbWafer.position.copy(procObjs.efStart);rbWafer.visible=false;
   scene.add(rbWafer);procObjs.rbWafer=rbWafer;
 
   // ── UV 光束視覺化 ──────────────────────────────────────────────────────────
-  // 主光束柱（從鏡組底部到晶圓）
-  var beamCyl=new THREE.Mesh(new THREE.CylinderGeometry(.006,.03,.52,8),uvMat.clone());
-  beamCyl.position.set(.10,.22,-.10);beamCyl.visible=false;
-  scene.add(beamCyl);procObjs.beamCyl=beamCyl;
-  // 曝光光暈（晶圓面的圓形發光）
-  var beamSpot=new THREE.Mesh(new THREE.CircleGeometry(.06,32),glowMat.clone());
-  beamSpot.rotation.x=-Math.PI/2;beamSpot.position.set(.10,.442,-.10);beamSpot.visible=false;
-  scene.add(beamSpot);procObjs.beamSpotGlow=beamSpot;
-  // 點光源（光線照明效果）
-  beamPtLight=new THREE.PointLight(0x9900ff,0,1.2);
-  beamPtLight.position.set(.10,.44,-.10);scene.add(beamPtLight);
+  // 光束高度 = 鏡組底部到晶圓夾頭（世界座標）
+  var beamH=Math.abs(pobBotW.y-chuckW.y);
+  var beamMidY=(pobBotW.y+chuckW.y)/2;
 
-  console.log('[OK] Procedural objects created: Reticle Stage + Robot Arm + UV Beam');
+  var beamCyl=new THREE.Mesh(new THREE.CylinderGeometry(.006,.03,beamH,8),uvMat.clone());
+  beamCyl.position.set(chuckW.x,beamMidY,chuckW.z);beamCyl.visible=false;
+  scene.add(beamCyl);procObjs.beamCyl=beamCyl;procObjs.beamMidY=beamMidY;
+
+  var beamSpot=new THREE.Mesh(new THREE.CircleGeometry(.06,32),glowMat.clone());
+  beamSpot.rotation.x=-Math.PI/2;
+  beamSpot.position.set(chuckW.x,chuckW.y+0.002,chuckW.z);beamSpot.visible=false;
+  scene.add(beamSpot);procObjs.beamSpotGlow=beamSpot;
+
+  beamPtLight=new THREE.PointLight(0x9900ff,0,1.4);
+  beamPtLight.position.set(chuckW.x,chuckW.y+0.06,chuckW.z);scene.add(beamPtLight);
+
+  // GLB Wafer_Chuck / Wafer 動畫與製程動畫衝突，停止 GLB 動畫交由製程動畫統一管理
+  if(mixer){mixer.stopAllAction();mixer=null;}
+
+  console.log('[OK] Proc objects built. efStart:',
+    procObjs.efStart.x.toFixed(2),procObjs.efStart.z.toFixed(2),
+    '→ efEnd:',procObjs.efEnd.x.toFixed(2),procObjs.efEnd.z.toFixed(2));
 }
 
 // ── 製程順序動畫（32s 循環）──────────────────────────────────────────────────
@@ -1268,89 +1314,95 @@ function updateProcessAnim(dt){
   procElapsed=(procElapsed+dt)%PROC_T;
   var t=procElapsed;
 
-  // 找 GLB 節點
   var foupDoor=sceneMeshMap['FOUP_Door'];
-  var wChuck=sceneMeshMap['Wafer_Chuck'];
-  var wWafer=sceneMeshMap['Wafer'];
+  var wChuck  =sceneMeshMap['Wafer_Chuck'];
+  var wWafer  =sceneMeshMap['Wafer'];
+  var eS=procObjs.efStart, eE=procObjs.efEnd;
 
-  // ── 0~2s: FOUP 門開 ────────────────────────────────────────────────────────
+  // ── 0~2s / 25~27s: FOUP 門開關（GLB 局部 Y 座標）────────────────────────
   if(foupDoor){
     var fp=_ph(t,0,2)-_ph(t,25,27);
     foupDoor.position.y=0.82+fp*0.35;
   }
 
-  // ── 機械手臂整體動作（伸縮 + 旋轉）──────────────────────────────────────
-  var extP =_ph(t,2,5.5);   // 伸出
-  var retP =_ph(t,19.5,23); // 縮回
-  var netExt=extP-retP;     // 0=縮回，1=完全伸出
+  // ── 機械手臂（世界座標插值）────────────────────────────────────────────
+  var extP=_ph(t,2,5.5), retP=_ph(t,19.5,23);
+  var netExt=_c01(extP-retP);
+  // End Effector 從 efStart 插值到 efEnd（均為世界座標）
+  var efX=eS.x+netExt*(eE.x-eS.x);
+  var efY=eE.y;
+  var efZ=eS.z+netExt*(eE.z-eS.z);
 
-  // 主臂：從 x=-1.20 伸到 x=-0.75，次臂到 x=-0.45
   if(procObjs.rbLink){
-    procObjs.rbLink.position.x=-1.20+netExt*0.55;
-    procObjs.rbLink.scale.x=1+netExt*0.65;
+    procObjs.rbLink.position.x=eS.x-0.08+netExt*(eE.x-eS.x+0.08);
+    procObjs.rbLink.position.z=eS.z+netExt*(eE.z-eS.z)*0.4;
+    procObjs.rbLink.scale.x=1+netExt*0.9;
   }
   if(procObjs.rbLink2){
-    procObjs.rbLink2.position.x=-.90+netExt*0.60;
-    procObjs.rbLink2.scale.x=1+netExt*0.55;
+    procObjs.rbLink2.position.x=eS.x+0.18+netExt*(eE.x-eS.x-0.05);
+    procObjs.rbLink2.position.z=eS.z+netExt*(eE.z-eS.z)*0.7;
+    procObjs.rbLink2.scale.x=1+netExt*0.7;
   }
-  // 末端夾持器（End Effector）跟著移動
-  var efX=-.62+netExt*1.0;  // 往 +x 移動到 Chuck 位置 (-0.3 area)
-  var efZ=0.52-netExt*0.62; // 往 -z 移動到 Chuck z=-.10
-  if(procObjs.ef1){procObjs.ef1.position.set(efX,.82,efZ+0.03);}
-  if(procObjs.ef2){procObjs.ef2.position.set(efX,.82,efZ-0.03);}
+  if(procObjs.rbTurret){
+    procObjs.rbTurret.position.x=eS.x+netExt*(eE.x-eS.x)*0.25;
+    procObjs.rbTurret.position.z=eS.z+netExt*(eE.z-eS.z)*0.25;
+  }
+  if(procObjs.ef1)procObjs.ef1.position.set(efX,efY,efZ+0.03);
+  if(procObjs.ef2)procObjs.ef2.position.set(efX,efY,efZ-0.03);
 
-  // ── 機械手臂上的晶圓 ────────────────────────────────────────────────────
-  // 3.5~8s：可見，手臂取片後移到 Chuck；19s~23s：取回片子回 FOUP
+  // ── 手臂上的晶圓（3.5~8.5s 傳送中；19.5~23.5s 取回）──────────────────
   var rwShow=(t>=3.5&&t<8.5)||(t>=19.5&&t<23.5);
   if(procObjs.rbWafer){
     procObjs.rbWafer.visible=rwShow;
-    if(rwShow){
-      procObjs.rbWafer.position.set(efX,.845,efZ);
-    }
+    if(rwShow)procObjs.rbWafer.position.set(efX,efY+0.005,efZ);
   }
 
-  // ── 8~19s: 晶圓在載台上，做掃描 ────────────────────────────────────────
-  // (GLB 既有的 Wafer_Chuck 動畫已有基本位移，這裡做掃描疊加)
-  var scanning=(t>=9&&t<19);
+  // ── 8.5~19s: 晶圓放到載台，做步進掃描（GLB 局部座標）──────────────────
+  // GLB 節點 Wafer_Chuck 的 .position 是局部座標（相對 model parent）
+  // 靜止局部座標 ≈ [-0.3, 0.4, 0]（由 GLB 定義）
+  var scanning=(t>=8.5&&t<19);
   if(wChuck&&wWafer){
     if(scanning){
-      var sp=_c01((t-9)/10);
-      // 步進掃描（Scan field pattern）
-      var scanX=0.1+0.09*Math.sin(sp*Math.PI*7)*Math.cos(sp*Math.PI*0.5);
-      var scanZ=-.10+0.07*Math.cos(sp*Math.PI*5)*Math.sin(sp*Math.PI*0.7);
-      wChuck.position.x=scanX; wWafer.position.x=scanX;
-      wChuck.position.z=scanZ; wWafer.position.z=scanZ;
-    } else if(t<8||t>=20){
-      wChuck.position.x=-.30; wChuck.position.z=0.0;
-      wWafer.position.x=-.30; wWafer.position.z=0.0;
+      var sp=_c01((t-8.5)/10.5);
+      var scanLX=-0.30+0.09*Math.sin(sp*Math.PI*7)*Math.cos(sp*Math.PI*0.5);
+      var scanLZ= 0.00+0.07*Math.cos(sp*Math.PI*5)*Math.sin(sp*Math.PI*0.7);
+      wChuck.position.x=scanLX; wWafer.position.x=scanLX;
+      wChuck.position.z=scanLZ; wWafer.position.z=scanLZ;
+    } else {
+      wChuck.position.x=-0.30; wWafer.position.x=-0.30;
+      wChuck.position.z= 0.00; wWafer.position.z= 0.00;
     }
   }
 
-  // ── 10~19s: UV 曝光光束 ─────────────────────────────────────────────────
+  // ── 10~19s: UV 曝光光束（追蹤 Chuck 世界座標）───────────────────────────
   var exposing=(t>=10&&t<19);
-  if(procObjs.beamCyl){procObjs.beamCyl.visible=exposing;}
-  if(procObjs.beamSpotGlow){procObjs.beamSpotGlow.visible=exposing;}
+  if(procObjs.beamCyl)procObjs.beamCyl.visible=exposing;
+  if(procObjs.beamSpotGlow)procObjs.beamSpotGlow.visible=exposing;
   if(beamPtLight){
-    if(exposing){
-      var pulse=0.5+0.5*Math.sin(t*Math.PI*12); // 快速脈衝（模擬掃描曝光）
+    if(exposing&&wChuck){
+      // 用 getWorldPosition 取 Chuck 當前世界座標（含掃描偏移）
+      var cwp=new THREE.Vector3();
+      wChuck.getWorldPosition(cwp);
+      var pulse=0.5+0.5*Math.sin(t*Math.PI*12);
       beamPtLight.intensity=pulse*2.0;
-      if(procObjs.beamCyl)procObjs.beamCyl.material.opacity=0.25+pulse*0.45;
-      if(procObjs.beamSpotGlow)procObjs.beamSpotGlow.material.opacity=0.4+pulse*0.5;
-      // 光束追蹤載台
-      if(wChuck){
-        procObjs.beamCyl.position.x=wChuck.position.x;
-        procObjs.beamCyl.position.z=wChuck.position.z;
-        procObjs.beamSpotGlow.position.x=wChuck.position.x;
-        procObjs.beamSpotGlow.position.z=wChuck.position.z;
-        beamPtLight.position.x=wChuck.position.x;
-        beamPtLight.position.z=wChuck.position.z;
+      if(procObjs.beamCyl){
+        procObjs.beamCyl.material.opacity=0.25+pulse*0.45;
+        procObjs.beamCyl.position.x=cwp.x;
+        procObjs.beamCyl.position.z=cwp.z;
       }
+      if(procObjs.beamSpotGlow){
+        procObjs.beamSpotGlow.material.opacity=0.4+pulse*0.5;
+        procObjs.beamSpotGlow.position.x=cwp.x;
+        procObjs.beamSpotGlow.position.z=cwp.z;
+      }
+      beamPtLight.position.x=cwp.x;beamPtLight.position.z=cwp.z;
     } else {beamPtLight.intensity=0;}
   }
 
-  // ── 10~19s: 光罩掃描（Y 軸小幅往復）────────────────────────────────────
+  // ── 10~19s: 光罩掃描（世界座標 Y 軸小幅往復）────────────────────────────
   if(procObjs.rm&&procObjs.rmMarks){
-    var rmY=exposing?2.088+0.012*Math.sin(t*Math.PI*3.5):2.088;
+    var rmY=exposing?
+      procObjs.rmBaseY+0.012*Math.sin(t*Math.PI*3.5):procObjs.rmBaseY;
     procObjs.rm.position.y=rmY;
     procObjs.rmMarks.forEach(function(m){m.position.y=rmY+0.003;});
   }
