@@ -36,6 +36,98 @@ _hmi_cache: dict = {}
 
 _server_port: int = 0
 
+# ── 快速回應生成（NLU 無法識別時的後備）────────────────────────────────────
+
+def _smart_response(text: str) -> str:
+    """當 NLU 解析失敗（target=None）時，從 HMI 快取生成有意義回應"""
+    if not _hmi_cache or not _hmi_cache.get("sensors"):
+        return ""
+    sensors = {s["label"]: s for s in _hmi_cache["sensors"]}
+    alarms  = _hmi_cache.get("alarms", [])
+    sc_name = _hmi_cache.get("scenario_name", "")
+
+    # 判斷問題類型
+    _KW = {
+        "控制": "control", "系統狀態": "control", "Cabinet": "control",
+        "冷卻": "cooling",  "冷水": "cooling",   "流量": "cooling",
+        "水溫": "cooling",  "水流": "cooling",
+        "溫度": "temp",     "鏡組": "temp",       "lens": "temp",
+        "光源": "light",    "強度": "light",      "曝光": "light",
+        "真空": "vacuum",   "壓力": "vacuum",
+        "載台": "stage",    "位置": "stage",
+        "過濾": "filter",   "濾網": "filter",
+        "重啟": "restart",  "診斷": "diag",       "日誌": "diag",
+    }
+    topic = next((v for k, v in _KW.items() if k in text), "control")
+
+    # 狀態摘要輔助
+    def _fmt(s):
+        if not s:
+            return "（無資料）"
+        st = {"normal": "✓ 正常", "warning": "⚠ 警告", "critical": "🔴 異常"}.get(s["status"], "")
+        return f"{s['value']} {s['unit']}  {st}（正常值 {s['normal']}）"
+
+    if topic == "control":
+        parts = ["[控制系統狀態報告]", f"情境：{sc_name}" if sc_name else ""]
+        for s in _hmi_cache["sensors"]:
+            icon = {"normal": "🟢", "warning": "🟡", "critical": "🔴"}.get(s["status"], "⚪")
+            parts.append(f"  {icon} {s['label']}: {s['value']} {s['unit']}")
+        if alarms:
+            parts.append(f"\n⚠ 活動警報 {len(alarms)} 項：")
+            for a in alarms[:3]:
+                parts.append(f"  [{a['code']}] {a['system']} — {a['msg']}")
+        else:
+            parts.append("\n✅ 目前無警報，各子系統運行正常。")
+        return "\n".join(p for p in parts if p)
+
+    if topic == "cooling":
+        s = sensors.get("冷卻水流量") or sensors.get("冷卻水溫度")
+        t = sensors.get("冷卻水溫度")
+        lines = ["[冷卻系統檢查]"]
+        if sensors.get("冷卻水流量"):
+            lines.append(f"  流量：{_fmt(sensors['冷卻水流量'])}")
+        if t:
+            lines.append(f"  水溫：{_fmt(t)}")
+        if not lines[1:]:
+            lines.append("  （感測器資料尚未載入）")
+        alm = [a for a in alarms if "冷卻" in a.get("system", "")]
+        if alm:
+            lines.append(f"⚠ 警報：{alm[0]['msg']}")
+        return "\n".join(lines)
+
+    if topic == "temp":
+        s = sensors.get("投影鏡組溫度")
+        return f"[鏡組溫度] {_fmt(s)}" if s else ""
+
+    if topic == "light":
+        s = sensors.get("光源強度")
+        return f"[光源系統] 光源強度 {_fmt(s)}" if s else ""
+
+    if topic == "vacuum":
+        s = sensors.get("真空壓力")
+        return f"[真空系統] 壓力讀數 {_fmt(s)}" if s else ""
+
+    if topic == "stage":
+        sx = sensors.get("載台位置X"); sy = sensors.get("載台位置Y")
+        parts = ["[晶圓載台]"]
+        if sx: parts.append(f"  X: {_fmt(sx)}")
+        if sy: parts.append(f"  Y: {_fmt(sy)}")
+        return "\n".join(parts) if len(parts) > 1 else ""
+
+    if topic == "restart":
+        return "[控制系統] 重啟服務指令已接收。請確認無正在進行的曝光程序後，依序關閉子系統，等待 30 秒後重新啟動。"
+
+    if topic == "diag":
+        lines = ["[診斷日誌下載]"]
+        if alarms:
+            for a in alarms:
+                lines.append(f"  {a['code']} | {a['system']} | {a['level'].upper()} | {a['msg']}")
+        else:
+            lines.append("  無異常記錄。系統運行正常。")
+        return "\n".join(lines)
+
+    return ""
+
 # ── SECOM 特徵映射（真實 feature index → sigma 偏差）────────────────────────
 _SECOM_FEATURES = {
     "cooling":   [(10, -2.73), (89, -3.12), (156, -2.45), (201, -1.95), (267, -1.62)],
@@ -88,8 +180,15 @@ def _build_hmi_data(state: dict) -> None:
                            "system": label, "msg": msg})
 
     # ── 感測器 ────────────────────────────────────────────────────────────────
+    # 推算冷卻水溫度（由流量反推：流量越低 → 水溫越高）
+    cooling_flow_val = state.get("cooling_flow")
+    if cooling_flow_val is not None:
+        state = dict(state)  # 不修改原始 dict
+        state["cooling_temp"] = round(18.0 + max(0.0, 5.0 - float(cooling_flow_val)) * 2.8, 1)
+
     # (label, key, unit, normal, warn_thresh, crit_thresh, lower_is_bad)
     SENSORS = [
+        ("冷卻水溫度",   "cooling_temp",        "°C",    18.0,20.0,22.0, False),
         ("冷卻水流量",   "cooling_flow",        "L/min",  5.0, 4.5, 4.0,  True),
         ("投影鏡組溫度", "lens_temp",           "°C",    23.0,24.0,26.0, False),
         ("光源強度",    "light_intensity",      "%",    100.0,92.0,85.0,  True),
@@ -265,7 +364,13 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
             snap["msgs"], snap["log"])
         with _session_lock:
             _session.update(eq=eq, dash=dash, eq_st=eq_st, msgs=msgs, log=log)
-        self._json({"ok": True, "ai_msg": self._latest_ai(msgs),
+        ai_reply = self._latest_ai(msgs)
+        # NLU 無法識別 target 時（"你檢查了None"），改用 HMI 快取生成有意義回應
+        if not ai_reply or "你檢查了None" in ai_reply or "你檢查了未知" in ai_reply:
+            smart = _smart_response(text)
+            if smart:
+                ai_reply = smart
+        self._json({"ok": True, "ai_msg": ai_reply,
                     "msgs": self._msgs_to_list(msgs)})
 
 
@@ -534,11 +639,22 @@ canvas{position:fixed;top:0;left:0;display:block;}
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+<script src="./three.min.js"></script>
+<script src="./GLTFLoader.js"></script>
+<script src="./PointerLockControls.js"></script>
 <script>
 'use strict';
+// Catch any JS error and display on screen
+window.onerror=function(msg,src,line,col,err){
+  var s=document.getElementById('loading-screen');
+  if(s)s.innerHTML='<div style="color:#f44;font-size:13px;max-width:80%;text-align:center;padding:20px;">'
+    +'<b>❌ JavaScript 錯誤</b><br><br>'
+    +'<span style="color:#aaa">'+msg+'</span><br>'
+    +'<span style="color:#666;font-size:11px;">Line '+line+'</span><br><br>'
+    +'<button onclick="location.reload()" style="background:#0d2a4a;border:1px solid #4af;color:#4af;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:12px;">重新整理</button>'
+    +'</div>';
+  return false;
+};
 
 // ── Mesh action / label maps ──────────────────────────────────────────────────
 var MA={
@@ -625,8 +741,8 @@ camera.position.set(0,1.6,4);
 scene.add(new THREE.AmbientLight(0xffffff,0.65));
 var sun=new THREE.DirectionalLight(0xffffff,1.3);
 sun.position.set(6,10,6);sun.castShadow=true;scene.add(sun);
-scene.add(Object.assign(new THREE.DirectionalLight(0x4488ff,0.3),{position:{x:-6,y:3,z:-6}}).position&&new THREE.DirectionalLight(0x4488ff,0.3)||(function(){var l=new THREE.DirectionalLight(0x4488ff,0.3);l.position.set(-6,3,-6);scene.add(l);return l;})());
 var fill=new THREE.DirectionalLight(0x4488ff,.3);fill.position.set(-6,3,-6);scene.add(fill);
+var rim=new THREE.DirectionalLight(0xffeedd,.15);rim.position.set(0,-3,-8);scene.add(rim);
 // Floor
 var floorMesh=new THREE.Mesh(new THREE.PlaneGeometry(40,40),
   new THREE.MeshStandardMaterial({color:0x080e18,roughness:.95,metalness:.05}));
@@ -718,33 +834,45 @@ function drawHMIScreen(data){
 var loader=new THREE.GLTFLoader();
 loader.load('./asml_duv.glb',
   function(gltf){
-    document.getElementById('loading-screen').style.display='none';
-    var ss=document.getElementById('start-screen');
-    ss.style.display='flex';ss.style.width=CW+'px';ss.style.height=CH+'px';
-    var model=gltf.scene;
-    model.traverse(function(o){if(o.isMesh){o.castShadow=true;o.receiveShadow=true;allMeshes.push(o);}});
-    scene.add(model);
-    var box=new THREE.Box3().setFromObject(model);
-    var c=box.getCenter(new THREE.Vector3()),s=box.getSize(new THREE.Vector3());
-    model.position.set(-c.x,-box.min.y,-c.z);
-    // Re-calc box in world space after positioning
-    var worldBox=new THREE.Box3().setFromObject(model);
-    // HMI Screen on left face
-    createHMIScreen(worldBox.getSize(new THREE.Vector3())&&worldBox);
-    // Camera start position
-    var r=Math.max(s.x,s.z)*0.85;
-    camera.position.set(r,1.6,r);
-    var look=new THREE.Vector3(0,s.y*0.4,0);camera.lookAt(look);
+    try{
+      document.getElementById('loading-screen').style.display='none';
+      var ss=document.getElementById('start-screen');
+      ss.style.display='flex';ss.style.width=CW+'px';ss.style.height=CH+'px';
+      var model=gltf.scene;
+      model.traverse(function(o){if(o.isMesh){o.castShadow=true;o.receiveShadow=true;allMeshes.push(o);}});
+      scene.add(model);
+      var box=new THREE.Box3().setFromObject(model);
+      var c=box.getCenter(new THREE.Vector3()),s=box.getSize(new THREE.Vector3());
+      model.position.set(-c.x,-box.min.y,-c.z);
+      var worldBox=new THREE.Box3().setFromObject(model);
+      createHMIScreen(worldBox);
+      var r=Math.max(s.x,s.z)*0.85;
+      camera.position.set(r,1.6,r);
+      camera.lookAt(new THREE.Vector3(0,s.y*0.4,0));
+    }catch(e){
+      var el=document.getElementById('loading-screen');
+      if(el)el.innerHTML='<div style="color:#f44;text-align:center;padding:20px;">❌ 模型處理錯誤<br><small style="color:#888">'+e.message+'</small></div>';
+      console.error('onLoad error:',e);
+    }
   },
   function(xhr){
-    if(xhr.total>0){var p=Math.round(xhr.loaded/xhr.total*100);
-      document.getElementById('load-pct').textContent=p+'%';
-      document.getElementById('load-bar').style.width=p+'%';}
+    var pEl=document.getElementById('load-pct');
+    var bEl=document.getElementById('load-bar');
+    if(!pEl)return;
+    if(xhr.total&&xhr.total>0){
+      var p=Math.round(xhr.loaded/xhr.total*100);
+      pEl.textContent=p+'%'; if(bEl)bEl.style.width=p+'%';
+    } else if(xhr.loaded>0){
+      var kb=Math.round(xhr.loaded/1024);
+      pEl.textContent=kb+' KB';
+      // Fake progress (model ~1.5MB)
+      if(bEl)bEl.style.width=Math.min(90,Math.round(xhr.loaded/15000))+'%';
+    }
   },
   function(err){
-    document.getElementById('loading-screen').innerHTML=
-      '<span style="color:#f44">❌ 模型載入失敗</span><br><small style="color:#888">'+err+'</small>';
-    console.error('GLB:',err);
+    var el=document.getElementById('loading-screen');
+    if(el)el.innerHTML='<div style="color:#f44;text-align:center;padding:20px;">❌ 模型載入失敗<br><small style="color:#888">'+err+'</small><br><br><button onclick="location.reload()" style="background:#0d2a4a;border:1px solid #4af;color:#4af;padding:8px 20px;border-radius:6px;cursor:pointer;">重新整理</button></div>';
+    console.error('GLB error:',err);
   }
 );
 
@@ -876,6 +1004,40 @@ function renderHMI(d){
     });
     html+='</div></div>';
   }
+  // ERROR Log
+  html+='<div class="hmi-section">';
+  html+='<div class="hmi-section-title" style="color:'+(d.alarms&&d.alarms.length?'#ff6644':'#5a8a9a')+'">📋 系統錯誤日誌 (ERROR Log)</div>';
+  if(d.alarms&&d.alarms.length){
+    var now=new Date();
+    d.alarms.forEach(function(a,i){
+      var t=new Date(now.getTime()-i*197000);
+      function z(n){return n.toString().padStart(2,'0');}
+      var ts=z(t.getHours())+':'+z(t.getMinutes())+':'+z(t.getSeconds());
+      var col=a.level==='critical'?'#ff4444':'#ffaa00';
+      html+='<div style="display:flex;gap:10px;padding:5px 8px;border-bottom:1px solid #0d1b2a;font-family:Consolas,monospace;font-size:11px;">';
+      html+='<span style="color:#3a5a7c;min-width:55px;">'+ts+'</span>';
+      html+='<span style="color:'+col+';min-width:65px;font-weight:bold;">['+a.level.toUpperCase()+']</span>';
+      html+='<span style="color:#7ab;min-width:70px;">'+a.code+'</span>';
+      html+='<span style="color:#cde;">'+a.system+'：'+a.msg+'</span>';
+      html+='</div>';
+    });
+    // 新增正常運行紀錄
+    var ok=new Date(now.getTime()-d.alarms.length*210000);
+    function z2(n){return n.toString().padStart(2,'0');}
+    html+='<div style="display:flex;gap:10px;padding:5px 8px;font-family:Consolas,monospace;font-size:11px;">';
+    html+='<span style="color:#3a5a7c;min-width:55px;">'+z2(ok.getHours())+':'+z2(ok.getMinutes())+':'+z2(ok.getSeconds())+'</span>';
+    html+='<span style="color:#44cc88;min-width:65px;font-weight:bold;">[INFO]</span>';
+    html+='<span style="color:#7ab;min-width:70px;">SYS-INIT</span>';
+    html+='<span style="color:#5a8a9a;">系統啟動完成，開始監控。</span>';
+    html+='</div>';
+  } else {
+    html+='<div style="font-family:Consolas,monospace;font-size:11px;padding:8px;">';
+    html+='<span style="color:#3a5a7c;">'+new Date().toLocaleTimeString()+'</span>';
+    html+=' <span style="color:#44cc88;">[INFO]</span>';
+    html+=' <span style="color:#5a8a9a;">SYS-OK — 所有子系統運行正常，無錯誤記錄。</span>';
+    html+='</div>';
+  }
+  html+='</div>';
   $hmiContent.innerHTML=html;
   // Update canvas texture
   drawHMIScreen(d);
@@ -929,8 +1091,13 @@ document.addEventListener('keydown',function(e){
       if(hmiOpen){closeHMI();break;}
       if(inspecting){closeInspect();break;}
       if(hoveredObj){
-        if(hoveredObj.name==='HMI_Screen'){showHMIOverlay();}
-        else{var inf=getInfo(hoveredObj);if(inf)openInspect(inf.label,inf.action);}
+        if(hoveredObj.name==='HMI_Screen'){showHMIOverlay();break;}
+        var inf=getInfo(hoveredObj);
+        if(inf){
+          // 控制系統面板 → 直接開啟 HMI 覆蓋畫面
+          if(inf.label==='控制系統'||inf.label==='HMI 控制面板'){showHMIOverlay();}
+          else{openInspect(inf.label,inf.action);}
+        }
       }
       break;
     case 'KeyC':$ci.focus();break;
@@ -1006,7 +1173,8 @@ function animate(){
         if(!origMats.has(obj))origMats.set(obj,obj.material);
         obj.material=hlMat;hoveredObj=obj;
         if(!inspecting&&!hmiOpen){
-          $prompt.textContent=(obj.name==='HMI_Screen'?'[E] 開啟 HMI 控制面板':'[E] 檢查: '+inf.label);
+          var isHMITrigger=(obj.name==='HMI_Screen'||inf.label==='控制系統'||inf.label==='HMI 控制面板');
+          $prompt.textContent=(isHMITrigger?'[E] 開啟 HMI 控制面板（感測器 & ERROR Log）':'[E] 檢查: '+inf.label);
           $prompt.style.left=(CW/2)+'px';$prompt.style.display='block';
           $xhair.classList.add('hit');
         }
