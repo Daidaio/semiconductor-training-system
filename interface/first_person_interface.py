@@ -1357,21 +1357,39 @@ function updateProcessAnim(dt){
     if(rwShow)procObjs.rbWafer.position.set(efX,efY+0.005,efZ);
   }
 
-  // ── 8.5~19s: 晶圓放到載台，做步進掃描（GLB 局部座標）──────────────────
-  // GLB 節點 Wafer_Chuck 的 .position 是局部座標（相對 model parent）
-  // 靜止局部座標 ≈ [-0.3, 0.4, 0]（由 GLB 定義）
-  var scanning=(t>=8.5&&t<19);
+  // ── 晶圓載台移動（GLB 局部座標）──────────────────────────────────────────
+  // 鏡組（POB_Bottom）局部座標約 [0.10, *, -0.10]
+  // 裝載位置 [-0.30, 0.00]；掃描中心應在鏡組正下方 [0.10, -0.10]
+  var LENS_LX=0.10, LENS_LZ=-0.10; // 鏡組正下方局部座標
+  var LOAD_LX=-0.30,LOAD_LZ=0.00;  // 裝載/卸載位置局部座標
+
+  // 8.5~9.5s: 晶圓從裝載位置移到鏡組下方（定位）
+  var posP=_ph(t,8.5,9.5);
+  // 9.5~19s: 在鏡組下方做步進掃描
+  var scanning=(t>=9.5&&t<19);
+  // 19~20s: 掃描結束，移回裝載位置（給機械手臂取片）
+  var retLoadP=_ph(t,19,20);
+
   if(wChuck&&wWafer){
-    if(scanning){
-      var sp=_c01((t-8.5)/10.5);
-      var scanLX=-0.30+0.09*Math.sin(sp*Math.PI*7)*Math.cos(sp*Math.PI*0.5);
-      var scanLZ= 0.00+0.07*Math.cos(sp*Math.PI*5)*Math.sin(sp*Math.PI*0.7);
-      wChuck.position.x=scanLX; wWafer.position.x=scanLX;
-      wChuck.position.z=scanLZ; wWafer.position.z=scanLZ;
+    var lx,lz;
+    if(t>=8.5&&t<9.5){
+      // 定位：從裝載位置平滑移到鏡組下方
+      lx=LOAD_LX+posP*(LENS_LX-LOAD_LX);
+      lz=LOAD_LZ+posP*(LENS_LZ-LOAD_LZ);
+    } else if(scanning){
+      // 步進掃描：以鏡組為中心做 XZ 蛇行掃描
+      var sp=_c01((t-9.5)/9.5);
+      lx=LENS_LX+0.09*Math.sin(sp*Math.PI*7)*Math.cos(sp*Math.PI*0.5);
+      lz=LENS_LZ+0.07*Math.cos(sp*Math.PI*5)*Math.sin(sp*Math.PI*0.7);
+    } else if(t>=19&&t<20){
+      // 回到裝載位置
+      lx=LENS_LX+retLoadP*(LOAD_LX-LENS_LX);
+      lz=LENS_LZ+retLoadP*(LOAD_LZ-LENS_LZ);
     } else {
-      wChuck.position.x=-0.30; wWafer.position.x=-0.30;
-      wChuck.position.z= 0.00; wWafer.position.z= 0.00;
+      lx=LOAD_LX; lz=LOAD_LZ;
     }
+    wChuck.position.x=lx; wWafer.position.x=lx;
+    wChuck.position.z=lz; wWafer.position.z=lz;
   }
 
   // ── 10~19s: UV 曝光光束（追蹤 Chuck 世界座標）───────────────────────────
