@@ -1299,9 +1299,10 @@ function createProcObjects(model){
 
   // 主光束柱：寬頂窄底（照明出口寬 → 4:1 縮小投影 → 晶圓窄）
   var beamCyl=new THREE.Mesh(new THREE.CylinderGeometry(.055,.008,beamH,12),uvMat.clone());
-  beamCyl.position.set(rsCX,beamMidY,rsCZ);beamCyl.visible=false;
+  beamCyl.position.set(rsCX,beamMidY,rsCZ);beamCyl.visible=true;
   scene.add(beamCyl);procObjs.beamCyl=beamCyl;
   procObjs.beamMidY=beamMidY;procObjs.beamTop=beamTop;
+  procObjs.rsCX=rsCX;procObjs.rsCZ=rsCZ;
 
   // 光罩處的光暈（表示光通過光罩）
   var reticlGlow=new THREE.Mesh(new THREE.CircleGeometry(.14,32),glowMat.clone());
@@ -1323,7 +1324,7 @@ function createProcObjects(model){
   var hBY    = beamTop + 0.05; // 照明系統出口高度（垂直光束起點上方）
   var hBeam=new THREE.Mesh(new THREE.CylinderGeometry(.007,.007,hBLen,8),uvMat.clone());
   hBeam.rotation.z=Math.PI/2;
-  hBeam.position.set(hBMidX,hBY,rsCZ);hBeam.visible=false;
+  hBeam.position.set(hBMidX,hBY,rsCZ);hBeam.visible=true;
   scene.add(hBeam);procObjs.hBeam=hBeam;
 
   beamPtLight=new THREE.PointLight(0x9900ff,0,1.4);
@@ -1428,41 +1429,51 @@ function updateProcessAnim(dt){
     wChuck.position.z=lz; wWafer.position.z=lz;
   }
 
-  // ── 10~19s: UV 曝光光束（追蹤 Chuck 世界座標）───────────────────────────
+  // ── UV 光束：常駐顯示（模擬照明系統持續運作），曝光時加強 ─────────────────
   var exposing=(t>=10&&t<19);
-  if(procObjs.beamCyl)procObjs.beamCyl.visible=exposing;
-  if(procObjs.beamSpotGlow)procObjs.beamSpotGlow.visible=exposing;
+  // 光束與水平束：常駐可見
+  if(procObjs.beamCyl)procObjs.beamCyl.visible=true;
+  if(procObjs.hBeam)procObjs.hBeam.visible=true;
+  // 光罩光暈 & 晶圓光暈：只在曝光時顯示
   if(procObjs.reticleGlow)procObjs.reticleGlow.visible=exposing;
-  if(procObjs.hBeam)procObjs.hBeam.visible=exposing;
+  if(procObjs.beamSpotGlow)procObjs.beamSpotGlow.visible=exposing;
+
+  // 常駐基礎呼吸效果（緩慢，0.25 基礎）
+  var breathe=0.5+0.5*Math.sin(procElapsed*Math.PI*0.6);
+  var baseOpacity=0.20+breathe*0.12;  // 0.20~0.32，柔和常亮
+
   if(beamPtLight){
-    if(exposing&&wChuck){
-      // 用 getWorldPosition 取 Chuck 當前世界座標（含掃描偏移）
+    if(wChuck){
       var cwp=new THREE.Vector3();
       wChuck.getWorldPosition(cwp);
-      var pulse=0.5+0.5*Math.sin(t*Math.PI*12);
-      beamPtLight.intensity=pulse*2.0;
-      if(procObjs.beamCyl){
-        procObjs.beamCyl.material.opacity=0.25+pulse*0.45;
-        // 垂直光束只追蹤 X/Z（chuck 掃描位移），Y 保持固定（從光罩頂到晶圓）
-        procObjs.beamCyl.position.x=cwp.x;
-        procObjs.beamCyl.position.z=cwp.z;
+      if(exposing){
+        // 曝光：快速脈衝，高亮
+        var pulse=0.5+0.5*Math.sin(t*Math.PI*12);
+        beamPtLight.intensity=pulse*2.0;
+        if(procObjs.beamCyl){
+          procObjs.beamCyl.material.opacity=0.45+pulse*0.45;
+          procObjs.beamCyl.position.x=cwp.x;
+          procObjs.beamCyl.position.z=cwp.z;
+        }
+        if(procObjs.hBeam)procObjs.hBeam.material.opacity=0.35+pulse*0.35;
+        if(procObjs.reticleGlow){
+          procObjs.reticleGlow.material.opacity=0.3+pulse*0.4;
+          procObjs.reticleGlow.position.x=cwp.x;
+          procObjs.reticleGlow.position.z=cwp.z;
+        }
+        if(procObjs.beamSpotGlow){
+          procObjs.beamSpotGlow.material.opacity=0.4+pulse*0.5;
+          procObjs.beamSpotGlow.position.x=cwp.x;
+          procObjs.beamSpotGlow.position.z=cwp.z;
+        }
+        beamPtLight.position.x=cwp.x;beamPtLight.position.z=cwp.z;
+      } else {
+        // 非曝光：柔和呼吸常亮
+        beamPtLight.intensity=breathe*0.4;
+        if(procObjs.beamCyl)procObjs.beamCyl.material.opacity=baseOpacity;
+        if(procObjs.hBeam)procObjs.hBeam.material.opacity=baseOpacity*0.8;
+        beamPtLight.position.x=procObjs.rsCX;beamPtLight.position.z=procObjs.rsCZ;
       }
-      if(procObjs.reticleGlow){
-        // 光罩光暈：固定在光罩平面，但 X/Z 隨 chuck 微幅跟隨（模擬掃描窗口）
-        procObjs.reticleGlow.material.opacity=0.3+pulse*0.4;
-        procObjs.reticleGlow.position.x=cwp.x;
-        procObjs.reticleGlow.position.z=cwp.z;
-      }
-      if(procObjs.hBeam){
-        // 水平入射光束：強度隨脈衝閃爍
-        procObjs.hBeam.material.opacity=0.2+pulse*0.35;
-      }
-      if(procObjs.beamSpotGlow){
-        procObjs.beamSpotGlow.material.opacity=0.4+pulse*0.5;
-        procObjs.beamSpotGlow.position.x=cwp.x;
-        procObjs.beamSpotGlow.position.z=cwp.z;
-      }
-      beamPtLight.position.x=cwp.x;beamPtLight.position.z=cwp.z;
     } else {beamPtLight.intensity=0;}
   }
 
