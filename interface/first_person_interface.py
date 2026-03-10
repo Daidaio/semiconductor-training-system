@@ -1201,20 +1201,24 @@ function createProcObjects(model){
   var pobBot  = sceneMeshMap['POB_Bottom'];
   var wChuck  = sceneMeshMap['Wafer_Chuck'];
   var foupPort= sceneMeshMap['FOUP_Port'];
+  var laserOut= sceneMeshMap['Laser_Out'] || sceneMeshMap['Laser_Box'] || sceneMeshMap['Laser_Vent'];
 
   var pobTopW =new THREE.Vector3(); var pobBotW=new THREE.Vector3();
   var chuckW  =new THREE.Vector3(); var foupW  =new THREE.Vector3();
+  var laserW  =new THREE.Vector3();
   if(pobTop) pobTop.getWorldPosition(pobTopW);   else pobTopW.set(0.64,2.19,0.12);
   if(pobBot) pobBot.getWorldPosition(pobBotW);   else pobBotW.set(0.64,0.71,0.12);
   if(wChuck) wChuck.getWorldPosition(chuckW);    else chuckW.set(0.24,0.62,0.12);
   if(foupPort)foupPort.getWorldPosition(foupW);  else foupW.set(-0.93,1.04,0.64);
+  if(laserOut)laserOut.getWorldPosition(laserW); else laserW.set(pobTopW.x+0.90, pobTopW.y+0.28, pobTopW.z);
 
   // 儲存動畫用基準位置
-  procObjs.chuckW  = chuckW.clone();   // 晶圓夾頭世界座標（靜止時）
-  procObjs.pobBotW = pobBotW.clone();  // 鏡組底部（光束起點）
+  procObjs.chuckW  = chuckW.clone();
+  procObjs.pobBotW = pobBotW.clone();
 
   console.log('[DBG] chuckW:',chuckW.x.toFixed(2),chuckW.y.toFixed(2),chuckW.z.toFixed(2),
-              '  pobTopW:',pobTopW.x.toFixed(2),pobTopW.y.toFixed(2),pobTopW.z.toFixed(2));
+              '  pobTopW:',pobTopW.x.toFixed(2),pobTopW.y.toFixed(2),pobTopW.z.toFixed(2),
+              '  laserW:',laserW.x.toFixed(2),laserW.y.toFixed(2),laserW.z.toFixed(2));
 
   // ── 光罩載台（Reticle Stage）──────────────────────────────────────────────
   // 放在 POB_Top_Cap 正上方 0.18m
@@ -1316,16 +1320,32 @@ function createProcObjects(model){
   beamSpot.position.set(rsCX,chuckW.y+0.002,rsCZ);beamSpot.visible=false;
   scene.add(beamSpot);procObjs.beamSpotGlow=beamSpot;
 
-  // 水平入射光：ArF Laser（右側）→ 照明系統
-  // 高度固定在 beamTop+0.28（照明系統頂部入射點）
-  var hBSrcX = rsCX + 0.52;   // 右側（ArF 雷射方向）
-  var hBLen  = 0.52;
-  var hBMidX = rsCX + hBLen * 0.5;
-  var hBY    = beamTop + 0.28; // 照明系統頂部入射高度
+  // 水平入射光：ArF Laser → 照明系統頂部
+  // 終點：照明系統中心 X（rsCX），高度 beamTop+0.28
+  var hBY    = beamTop + 0.28;
+  var hBEndX = rsCX;                         // 照明系統中心 X
+  var hBSrcX = laserW.x;                     // 雷射機體出口 X（世界座標）
+  // 若雷射在左側則取反向
+  if(Math.abs(hBSrcX - rsCX) < 0.05) hBSrcX = rsCX + 0.85; // fallback
+  var hBLen  = Math.abs(hBSrcX - hBEndX);
+  var hBMidX = (hBSrcX + hBEndX) * 0.5;
   var hBeam=new THREE.Mesh(new THREE.CylinderGeometry(.007,.007,hBLen,8),uvMat.clone());
   hBeam.rotation.z=Math.PI/2;
-  hBeam.position.set(hBMidX,hBY,rsCZ);hBeam.visible=true;
+  hBeam.position.set(hBMidX, hBY, rsCZ);hBeam.visible=true;
   scene.add(hBeam);procObjs.hBeam=hBeam;
+  procObjs.hBY=hBY; procObjs.hBSrcX=hBSrcX; procObjs.hBEndX=hBEndX;
+
+  // 雷射機體光暈（表示雷射正在運作）
+  var laserGlowMat=uvMat.clone();
+  laserGlowMat.opacity=0.15;
+  var laserGlow=new THREE.Mesh(new THREE.SphereGeometry(.06,16,16),laserGlowMat);
+  laserGlow.position.set(hBSrcX, hBY, rsCZ);laserGlow.visible=true;
+  scene.add(laserGlow);procObjs.laserGlow=laserGlow;
+
+  // 雷射機體點光源
+  var laserPtLight=new THREE.PointLight(0x9900ff,0.3,0.6);
+  laserPtLight.position.set(hBSrcX, hBY, rsCZ);scene.add(laserPtLight);
+  procObjs.laserPtLight=laserPtLight;
 
   // 照明系統內部垂直光束：從雷射入射點(hBY) 向下到投影鏡組頂(beamTop)
   var illuH = hBY - beamTop;
@@ -1438,10 +1458,11 @@ function updateProcessAnim(dt){
 
   // ── UV 光束：常駐顯示（模擬照明系統持續運作），曝光時加強 ─────────────────
   var exposing=(t>=10&&t<19);
-  // 光束（含照明系統內部段）與水平束：常駐可見
+  // 光束（含照明系統內部段）、水平束、雷射光暈：常駐可見
   if(procObjs.beamCyl)procObjs.beamCyl.visible=true;
   if(procObjs.illuBeam)procObjs.illuBeam.visible=true;
   if(procObjs.hBeam)procObjs.hBeam.visible=true;
+  if(procObjs.laserGlow)procObjs.laserGlow.visible=true;
   // 光罩光暈 & 晶圓光暈：只在曝光時顯示
   if(procObjs.reticleGlow)procObjs.reticleGlow.visible=exposing;
   if(procObjs.beamSpotGlow)procObjs.beamSpotGlow.visible=exposing;
@@ -1465,6 +1486,11 @@ function updateProcessAnim(dt){
         }
         if(procObjs.hBeam)procObjs.hBeam.material.opacity=0.35+pulse*0.35;
         if(procObjs.illuBeam)procObjs.illuBeam.material.opacity=0.40+pulse*0.45;
+        if(procObjs.laserGlow){
+          procObjs.laserGlow.material.opacity=0.30+pulse*0.55;
+          var s=0.9+pulse*0.4; procObjs.laserGlow.scale.setScalar(s);
+        }
+        if(procObjs.laserPtLight)procObjs.laserPtLight.intensity=0.5+pulse*1.2;
         if(procObjs.reticleGlow){
           procObjs.reticleGlow.material.opacity=0.3+pulse*0.4;
           procObjs.reticleGlow.position.x=cwp.x;
@@ -1482,6 +1508,11 @@ function updateProcessAnim(dt){
         if(procObjs.beamCyl)procObjs.beamCyl.material.opacity=baseOpacity;
         if(procObjs.illuBeam)procObjs.illuBeam.material.opacity=baseOpacity;
         if(procObjs.hBeam)procObjs.hBeam.material.opacity=baseOpacity*0.8;
+        if(procObjs.laserGlow){
+          procObjs.laserGlow.material.opacity=baseOpacity*0.7;
+          procObjs.laserGlow.scale.setScalar(1.0);
+        }
+        if(procObjs.laserPtLight)procObjs.laserPtLight.intensity=breathe*0.25;
         beamPtLight.position.x=procObjs.rsCX;beamPtLight.position.z=procObjs.rsCZ;
       }
     } else {beamPtLight.intensity=0;}
