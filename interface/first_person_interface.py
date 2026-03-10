@@ -1277,21 +1277,45 @@ function createProcObjects(model){
   scene.add(rbWafer);procObjs.rbWafer=rbWafer;
 
   // ── UV 光束視覺化 ──────────────────────────────────────────────────────────
-  // 光束高度 = 鏡組底部到晶圓夾頭（世界座標）
-  var beamH=Math.abs(pobBotW.y-chuckW.y);
-  var beamMidY=(pobBotW.y+chuckW.y)/2;
+  // 正確光路：光罩上方 → 穿過光罩 → 穿過鏡組 → 晶圓
+  // beamTop = 光罩平台上方 0.05m（光從照明系統打下來的起點）
+  // beamBot = 晶圓夾頭頂面
+  var beamTop=rsY+0.05;  // 光罩上方（世界座標）
+  var beamBot=chuckW.y;
+  var beamH=beamTop-beamBot;          // 完整光束高度（穿越光罩 + 鏡組 + 到晶圓）
+  var beamMidY=(beamTop+beamBot)/2;
 
-  var beamCyl=new THREE.Mesh(new THREE.CylinderGeometry(.006,.03,beamH,8),uvMat.clone());
-  beamCyl.position.set(chuckW.x,beamMidY,chuckW.z);beamCyl.visible=false;
-  scene.add(beamCyl);procObjs.beamCyl=beamCyl;procObjs.beamMidY=beamMidY;
+  // 主光束柱：細頂寬底（模擬投影縮小效果）
+  var beamCyl=new THREE.Mesh(new THREE.CylinderGeometry(.006,.045,beamH,8),uvMat.clone());
+  beamCyl.position.set(rsCX,beamMidY,rsCZ);beamCyl.visible=false;
+  scene.add(beamCyl);procObjs.beamCyl=beamCyl;
+  procObjs.beamMidY=beamMidY;procObjs.beamTop=beamTop;
 
+  // 光罩處的光暈（表示光通過光罩）
+  var reticlGlow=new THREE.Mesh(new THREE.CircleGeometry(.14,32),glowMat.clone());
+  reticlGlow.rotation.x=-Math.PI/2;
+  reticlGlow.position.set(rsCX,rmBaseY-0.002,rsCZ);reticlGlow.visible=false;
+  scene.add(reticlGlow);procObjs.reticleGlow=reticlGlow;
+
+  // 晶圓上的曝光光暈
   var beamSpot=new THREE.Mesh(new THREE.CircleGeometry(.06,32),glowMat.clone());
   beamSpot.rotation.x=-Math.PI/2;
-  beamSpot.position.set(chuckW.x,chuckW.y+0.002,chuckW.z);beamSpot.visible=false;
+  beamSpot.position.set(rsCX,chuckW.y+0.002,rsCZ);beamSpot.visible=false;
   scene.add(beamSpot);procObjs.beamSpotGlow=beamSpot;
 
+  // 照明→光罩的水平入射光（從 Illum_Barrel 方向打來）
+  var illumW=new THREE.Vector3();
+  var illumNode=sceneMeshMap['Illum_Barrel'];
+  if(illumNode)illumNode.getWorldPosition(illumW); else illumW.set(1.4,beamTop,rsCZ);
+  var hBeamLen=Math.abs(illumW.x-rsCX)*0.7;
+  var hBeamMidX=(illumW.x+rsCX)/2;
+  var hBeam=new THREE.Mesh(new THREE.CylinderGeometry(.005,.008,hBeamLen,8),uvMat.clone());
+  hBeam.rotation.z=Math.PI/2;  // 旋轉成水平
+  hBeam.position.set(hBeamMidX,beamTop-0.02,rsCZ);hBeam.visible=false;
+  scene.add(hBeam);procObjs.hBeam=hBeam;
+
   beamPtLight=new THREE.PointLight(0x9900ff,0,1.4);
-  beamPtLight.position.set(chuckW.x,chuckW.y+0.06,chuckW.z);scene.add(beamPtLight);
+  beamPtLight.position.set(rsCX,chuckW.y+0.06,rsCZ);scene.add(beamPtLight);
 
   // GLB Wafer_Chuck / Wafer 動畫與製程動畫衝突，停止 GLB 動畫交由製程動畫統一管理
   if(mixer){mixer.stopAllAction();mixer=null;}
@@ -1396,6 +1420,8 @@ function updateProcessAnim(dt){
   var exposing=(t>=10&&t<19);
   if(procObjs.beamCyl)procObjs.beamCyl.visible=exposing;
   if(procObjs.beamSpotGlow)procObjs.beamSpotGlow.visible=exposing;
+  if(procObjs.reticleGlow)procObjs.reticleGlow.visible=exposing;
+  if(procObjs.hBeam)procObjs.hBeam.visible=exposing;
   if(beamPtLight){
     if(exposing&&wChuck){
       // 用 getWorldPosition 取 Chuck 當前世界座標（含掃描偏移）
@@ -1405,8 +1431,19 @@ function updateProcessAnim(dt){
       beamPtLight.intensity=pulse*2.0;
       if(procObjs.beamCyl){
         procObjs.beamCyl.material.opacity=0.25+pulse*0.45;
+        // 垂直光束只追蹤 X/Z（chuck 掃描位移），Y 保持固定（從光罩頂到晶圓）
         procObjs.beamCyl.position.x=cwp.x;
         procObjs.beamCyl.position.z=cwp.z;
+      }
+      if(procObjs.reticleGlow){
+        // 光罩光暈：固定在光罩平面，但 X/Z 隨 chuck 微幅跟隨（模擬掃描窗口）
+        procObjs.reticleGlow.material.opacity=0.3+pulse*0.4;
+        procObjs.reticleGlow.position.x=cwp.x;
+        procObjs.reticleGlow.position.z=cwp.z;
+      }
+      if(procObjs.hBeam){
+        // 水平入射光束：強度隨脈衝閃爍
+        procObjs.hBeam.material.opacity=0.2+pulse*0.35;
       }
       if(procObjs.beamSpotGlow){
         procObjs.beamSpotGlow.material.opacity=0.4+pulse*0.5;
