@@ -848,7 +848,17 @@ loader.load('./asml_duv.glb',
       var ss=document.getElementById('start-screen');
       ss.style.display='flex';ss.style.width=CW+'px';ss.style.height=CH+'px';
       var model=gltf.scene;
-      model.traverse(function(o){if(o.isMesh){o.castShadow=true;o.receiveShadow=true;allMeshes.push(o);}});
+      // GLB 靜態光束節點隱藏（光路完全由動畫程式控制）
+      var GLB_BEAM_NODES=['Beam_H1','Beam_V1','Beam_H2','Beam_V2','Beam_Spot',
+                          'Mirror1','Mirror2','Mirror3'];
+      model.traverse(function(o){
+        if(o.isMesh){
+          o.castShadow=true;o.receiveShadow=true;allMeshes.push(o);
+          if(GLB_BEAM_NODES.indexOf(o.name)!==-1)o.visible=false;
+        }
+        // 也對 Group 節點隱藏（beam 節點可能是 group）
+        if(o.name&&GLB_BEAM_NODES.indexOf(o.name)!==-1)o.visible=false;
+      });
       scene.add(model);
       var box=new THREE.Box3().setFromObject(model);
       var c=box.getCenter(new THREE.Vector3()),s=box.getSize(new THREE.Vector3());
