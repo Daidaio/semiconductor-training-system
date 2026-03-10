@@ -1278,24 +1278,16 @@ function createProcObjects(model){
 
   // ── UV 光束視覺化 ──────────────────────────────────────────────────────────
   // 正確光路（DUV scanner）：
-  //   ArF Laser（右） → 水平 hBeam → 照明系統（Illum_Barrel）頂部
+  //   ArF Laser（右） → 水平 hBeam → 照明系統頂部
   //   → 垂直向下貫穿照明系統 → 穿過光罩（rmBaseY）→ 穿過投影鏡組 → 晶圓
-  //
-  // 光束寬度：照明系統出口（寬）→ 光罩縮小 → 鏡組 4:1 縮小投影 → 晶圓（最窄）
 
-  // 取 Illum_Barrel 世界座標作為照明系統中心
-  var illumW=new THREE.Vector3();
-  var illumNode=sceneMeshMap['Illum_Barrel'];
-  if(illumNode) illumNode.getWorldPosition(illumW);
-  else illumW.set(rsCX, rsY+0.55, rsCZ);  // fallback：光罩正上方 0.55m
-
-  // 垂直光束：從照明系統底部（illumW.y）往下到晶圓
-  var beamTop = illumW.y;       // 照明系統底面（光束起點）
+  // 垂直光束起點：光罩上方 0.30m（避免使用 Illum_Barrel 節點，該節點 Y 偏低）
+  var beamTop = rsY + 0.30;   // 照明系統底部（光罩稍上方）
   var beamBot = chuckW.y;
   var beamH   = beamTop - beamBot;
   var beamMidY= (beamTop + beamBot) / 2;
 
-  // 主光束柱：寬頂窄底（照明→光罩寬，投影縮小到晶圓窄）
+  // 主光束柱：寬頂窄底（照明出口寬 → 4:1 縮小投影 → 晶圓窄）
   var beamCyl=new THREE.Mesh(new THREE.CylinderGeometry(.055,.008,beamH,12),uvMat.clone());
   beamCyl.position.set(rsCX,beamMidY,rsCZ);beamCyl.visible=false;
   scene.add(beamCyl);procObjs.beamCyl=beamCyl;
@@ -1313,13 +1305,12 @@ function createProcObjects(model){
   beamSpot.position.set(rsCX,chuckW.y+0.002,rsCZ);beamSpot.visible=false;
   scene.add(beamSpot);procObjs.beamSpotGlow=beamSpot;
 
-  // 水平入射光：ArF Laser（右側）→ 照明系統頂部
-  // 確保水平光從右側進入（強制 srcX > rsCX）
-  var hBSrcX = Math.max(illumW.x + 0.30, rsCX + 0.45);  // ArF 雷射側（右）
-  var hBEndX = rsCX;                                      // 照明系統中心（進入點）
-  var hBLen  = hBSrcX - hBEndX;
-  var hBMidX = (hBSrcX + hBEndX) / 2;
-  var hBY    = illumW.y - 0.04;    // 照明系統頂部稍下（光束進入高度）
+  // 水平入射光：ArF Laser（右側）→ 照明系統
+  // 高度固定在 beamTop+0.05（照明系統出口，光在這裡轉為垂直向下）
+  var hBSrcX = rsCX + 0.52;   // 右側（ArF 雷射方向）
+  var hBLen  = 0.52;
+  var hBMidX = rsCX + hBLen * 0.5;
+  var hBY    = beamTop + 0.05; // 照明系統出口高度（垂直光束起點上方）
   var hBeam=new THREE.Mesh(new THREE.CylinderGeometry(.007,.007,hBLen,8),uvMat.clone());
   hBeam.rotation.z=Math.PI/2;
   hBeam.position.set(hBMidX,hBY,rsCZ);hBeam.visible=false;
