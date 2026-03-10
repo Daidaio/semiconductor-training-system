@@ -1277,16 +1277,26 @@ function createProcObjects(model){
   scene.add(rbWafer);procObjs.rbWafer=rbWafer;
 
   // ── UV 光束視覺化 ──────────────────────────────────────────────────────────
-  // 正確光路：光罩上方 → 穿過光罩 → 穿過鏡組 → 晶圓
-  // beamTop = 光罩平台上方 0.05m（光從照明系統打下來的起點）
-  // beamBot = 晶圓夾頭頂面
-  var beamTop=rsY+0.05;  // 光罩上方（世界座標）
-  var beamBot=chuckW.y;
-  var beamH=beamTop-beamBot;          // 完整光束高度（穿越光罩 + 鏡組 + 到晶圓）
-  var beamMidY=(beamTop+beamBot)/2;
+  // 正確光路（DUV scanner）：
+  //   ArF Laser（右） → 水平 hBeam → 照明系統（Illum_Barrel）頂部
+  //   → 垂直向下貫穿照明系統 → 穿過光罩（rmBaseY）→ 穿過投影鏡組 → 晶圓
+  //
+  // 光束寬度：照明系統出口（寬）→ 光罩縮小 → 鏡組 4:1 縮小投影 → 晶圓（最窄）
 
-  // 主光束柱：細頂寬底（模擬投影縮小效果）
-  var beamCyl=new THREE.Mesh(new THREE.CylinderGeometry(.006,.045,beamH,8),uvMat.clone());
+  // 取 Illum_Barrel 世界座標作為照明系統中心
+  var illumW=new THREE.Vector3();
+  var illumNode=sceneMeshMap['Illum_Barrel'];
+  if(illumNode) illumNode.getWorldPosition(illumW);
+  else illumW.set(rsCX, rsY+0.55, rsCZ);  // fallback：光罩正上方 0.55m
+
+  // 垂直光束：從照明系統底部（illumW.y）往下到晶圓
+  var beamTop = illumW.y;       // 照明系統底面（光束起點）
+  var beamBot = chuckW.y;
+  var beamH   = beamTop - beamBot;
+  var beamMidY= (beamTop + beamBot) / 2;
+
+  // 主光束柱：寬頂窄底（照明→光罩寬，投影縮小到晶圓窄）
+  var beamCyl=new THREE.Mesh(new THREE.CylinderGeometry(.055,.008,beamH,12),uvMat.clone());
   beamCyl.position.set(rsCX,beamMidY,rsCZ);beamCyl.visible=false;
   scene.add(beamCyl);procObjs.beamCyl=beamCyl;
   procObjs.beamMidY=beamMidY;procObjs.beamTop=beamTop;
@@ -1297,21 +1307,22 @@ function createProcObjects(model){
   reticlGlow.position.set(rsCX,rmBaseY-0.002,rsCZ);reticlGlow.visible=false;
   scene.add(reticlGlow);procObjs.reticleGlow=reticlGlow;
 
-  // 晶圓上的曝光光暈
-  var beamSpot=new THREE.Mesh(new THREE.CircleGeometry(.06,32),glowMat.clone());
+  // 晶圓上的曝光光暈（小圓，4:1 縮小投影）
+  var beamSpot=new THREE.Mesh(new THREE.CircleGeometry(.04,32),glowMat.clone());
   beamSpot.rotation.x=-Math.PI/2;
   beamSpot.position.set(rsCX,chuckW.y+0.002,rsCZ);beamSpot.visible=false;
   scene.add(beamSpot);procObjs.beamSpotGlow=beamSpot;
 
-  // 照明→光罩的水平入射光（從 Illum_Barrel 方向打來）
-  var illumW=new THREE.Vector3();
-  var illumNode=sceneMeshMap['Illum_Barrel'];
-  if(illumNode)illumNode.getWorldPosition(illumW); else illumW.set(1.4,beamTop,rsCZ);
-  var hBeamLen=Math.abs(illumW.x-rsCX)*0.7;
-  var hBeamMidX=(illumW.x+rsCX)/2;
-  var hBeam=new THREE.Mesh(new THREE.CylinderGeometry(.005,.008,hBeamLen,8),uvMat.clone());
-  hBeam.rotation.z=Math.PI/2;  // 旋轉成水平
-  hBeam.position.set(hBeamMidX,beamTop-0.02,rsCZ);hBeam.visible=false;
+  // 水平入射光：ArF Laser（右側）→ 照明系統頂部
+  // 確保水平光從右側進入（強制 srcX > rsCX）
+  var hBSrcX = Math.max(illumW.x + 0.30, rsCX + 0.45);  // ArF 雷射側（右）
+  var hBEndX = rsCX;                                      // 照明系統中心（進入點）
+  var hBLen  = hBSrcX - hBEndX;
+  var hBMidX = (hBSrcX + hBEndX) / 2;
+  var hBY    = illumW.y - 0.04;    // 照明系統頂部稍下（光束進入高度）
+  var hBeam=new THREE.Mesh(new THREE.CylinderGeometry(.007,.007,hBLen,8),uvMat.clone());
+  hBeam.rotation.z=Math.PI/2;
+  hBeam.position.set(hBMidX,hBY,rsCZ);hBeam.visible=false;
   scene.add(hBeam);procObjs.hBeam=hBeam;
 
   beamPtLight=new THREE.PointLight(0x9900ff,0,1.4);
