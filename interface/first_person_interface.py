@@ -1317,15 +1317,22 @@ function createProcObjects(model){
   scene.add(beamSpot);procObjs.beamSpotGlow=beamSpot;
 
   // 水平入射光：ArF Laser（右側）→ 照明系統
-  // 高度固定在 beamTop+0.05（照明系統出口，光在這裡轉為垂直向下）
+  // 高度固定在 beamTop+0.28（照明系統頂部入射點）
   var hBSrcX = rsCX + 0.52;   // 右側（ArF 雷射方向）
   var hBLen  = 0.52;
   var hBMidX = rsCX + hBLen * 0.5;
-  var hBY    = beamTop + 0.05; // 照明系統出口高度（垂直光束起點上方）
+  var hBY    = beamTop + 0.28; // 照明系統頂部入射高度
   var hBeam=new THREE.Mesh(new THREE.CylinderGeometry(.007,.007,hBLen,8),uvMat.clone());
   hBeam.rotation.z=Math.PI/2;
   hBeam.position.set(hBMidX,hBY,rsCZ);hBeam.visible=true;
   scene.add(hBeam);procObjs.hBeam=hBeam;
+
+  // 照明系統內部垂直光束：從雷射入射點(hBY) 向下到投影鏡組頂(beamTop)
+  var illuH = hBY - beamTop;
+  var illuMidY = (hBY + beamTop) / 2;
+  var illuBeam=new THREE.Mesh(new THREE.CylinderGeometry(.025,.055,illuH,12),uvMat.clone());
+  illuBeam.position.set(rsCX,illuMidY,rsCZ);illuBeam.visible=true;
+  scene.add(illuBeam);procObjs.illuBeam=illuBeam;
 
   beamPtLight=new THREE.PointLight(0x9900ff,0,1.4);
   beamPtLight.position.set(rsCX,chuckW.y+0.06,rsCZ);scene.add(beamPtLight);
@@ -1431,8 +1438,9 @@ function updateProcessAnim(dt){
 
   // ── UV 光束：常駐顯示（模擬照明系統持續運作），曝光時加強 ─────────────────
   var exposing=(t>=10&&t<19);
-  // 光束與水平束：常駐可見
+  // 光束（含照明系統內部段）與水平束：常駐可見
   if(procObjs.beamCyl)procObjs.beamCyl.visible=true;
+  if(procObjs.illuBeam)procObjs.illuBeam.visible=true;
   if(procObjs.hBeam)procObjs.hBeam.visible=true;
   // 光罩光暈 & 晶圓光暈：只在曝光時顯示
   if(procObjs.reticleGlow)procObjs.reticleGlow.visible=exposing;
@@ -1456,6 +1464,7 @@ function updateProcessAnim(dt){
           procObjs.beamCyl.position.z=cwp.z;
         }
         if(procObjs.hBeam)procObjs.hBeam.material.opacity=0.35+pulse*0.35;
+        if(procObjs.illuBeam)procObjs.illuBeam.material.opacity=0.40+pulse*0.45;
         if(procObjs.reticleGlow){
           procObjs.reticleGlow.material.opacity=0.3+pulse*0.4;
           procObjs.reticleGlow.position.x=cwp.x;
@@ -1471,6 +1480,7 @@ function updateProcessAnim(dt){
         // 非曝光：柔和呼吸常亮
         beamPtLight.intensity=breathe*0.4;
         if(procObjs.beamCyl)procObjs.beamCyl.material.opacity=baseOpacity;
+        if(procObjs.illuBeam)procObjs.illuBeam.material.opacity=baseOpacity;
         if(procObjs.hBeam)procObjs.hBeam.material.opacity=baseOpacity*0.8;
         beamPtLight.position.x=procObjs.rsCX;beamPtLight.position.z=procObjs.rsCZ;
       }
