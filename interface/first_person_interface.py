@@ -1197,20 +1197,21 @@ function createProcObjects(model){
   // ── 取得關鍵 GLB 節點的「世界座標」────────────────────────────────────────
   // GLB 節點是 model 的子物件，.position 是局部座標；
   // 必須用 getWorldPosition() 才能取得正確世界座標
-  var pobTop  = sceneMeshMap['POB_Top_Cap'];
-  var pobBot  = sceneMeshMap['POB_Bottom'];
-  var wChuck  = sceneMeshMap['Wafer_Chuck'];
-  var foupPort= sceneMeshMap['FOUP_Port'];
-  var laserOut= sceneMeshMap['Laser_Out'] || sceneMeshMap['Laser_Box'] || sceneMeshMap['Laser_Vent'];
+  var pobTop   = sceneMeshMap['POB_Top_Cap'];
+  var pobBot   = sceneMeshMap['POB_Bottom'];
+  var wChuck   = sceneMeshMap['Wafer_Chuck'];
+  var foupPort = sceneMeshMap['FOUP_Port'];
+  // 照明系統：用 IllumLens_0（第一片透鏡）定位照明系統中心
+  var illumNode= sceneMeshMap['IllumLens_0'] || sceneMeshMap['IllumLens_1'];
 
   var pobTopW =new THREE.Vector3(); var pobBotW=new THREE.Vector3();
   var chuckW  =new THREE.Vector3(); var foupW  =new THREE.Vector3();
-  var laserW  =new THREE.Vector3();
+  var illumW  =new THREE.Vector3();
   if(pobTop) pobTop.getWorldPosition(pobTopW);   else pobTopW.set(0.64,2.19,0.12);
   if(pobBot) pobBot.getWorldPosition(pobBotW);   else pobBotW.set(0.64,0.71,0.12);
   if(wChuck) wChuck.getWorldPosition(chuckW);    else chuckW.set(0.24,0.62,0.12);
   if(foupPort)foupPort.getWorldPosition(foupW);  else foupW.set(-0.93,1.04,0.64);
-  if(laserOut)laserOut.getWorldPosition(laserW); else laserW.set(pobTopW.x+0.90, pobTopW.y+0.28, pobTopW.z);
+  if(illumNode)illumNode.getWorldPosition(illumW);else illumW.set(pobTopW.x+0.45, pobTopW.y+0.28, pobTopW.z);
 
   // 儲存動畫用基準位置
   procObjs.chuckW  = chuckW.clone();
@@ -1218,7 +1219,7 @@ function createProcObjects(model){
 
   console.log('[DBG] chuckW:',chuckW.x.toFixed(2),chuckW.y.toFixed(2),chuckW.z.toFixed(2),
               '  pobTopW:',pobTopW.x.toFixed(2),pobTopW.y.toFixed(2),pobTopW.z.toFixed(2),
-              '  laserW:',laserW.x.toFixed(2),laserW.y.toFixed(2),laserW.z.toFixed(2));
+              '  illumW:',illumW.x.toFixed(2),illumW.y.toFixed(2),illumW.z.toFixed(2));
 
   // ── 光罩載台（Reticle Stage）──────────────────────────────────────────────
   // 放在 POB_Top_Cap 正上方 0.18m
@@ -1320,14 +1321,13 @@ function createProcObjects(model){
   beamSpot.position.set(rsCX,chuckW.y+0.002,rsCZ);beamSpot.visible=false;
   scene.add(beamSpot);procObjs.beamSpotGlow=beamSpot;
 
-  // 水平入射光：ArF Laser → 照明系統頂部
-  // 終點：照明系統中心 X（rsCX），高度 beamTop+0.28
-  var hBY    = beamTop + 0.28;
-  var hBEndX = rsCX;                         // 照明系統中心 X
-  var hBSrcX = laserW.x;                     // 雷射機體出口 X（世界座標）
-  // 若雷射在左側則取反向
-  if(Math.abs(hBSrcX - rsCX) < 0.05) hBSrcX = rsCX + 0.85; // fallback
+  // 水平光束：雷射(照明系統側面) → 投影鏡組頂(rsCX)
+  // 起點用 illumW.x（照明系統中心 X），終點 rsCX（投影鏡頂中心 X）
+  var hBY    = beamTop + 0.25;           // 照明系統下緣高度
+  var hBSrcX = illumW.x;                 // 照明系統中心 X（=雷射輸出端）
+  var hBEndX = rsCX;                     // 投影鏡頂中心 X
   var hBLen  = Math.abs(hBSrcX - hBEndX);
+  if(hBLen < 0.05) hBLen = 0.35;        // fallback 最小長度
   var hBMidX = (hBSrcX + hBEndX) * 0.5;
   var hBeam=new THREE.Mesh(new THREE.CylinderGeometry(.007,.007,hBLen,8),uvMat.clone());
   hBeam.rotation.z=Math.PI/2;
@@ -1335,15 +1335,14 @@ function createProcObjects(model){
   scene.add(hBeam);procObjs.hBeam=hBeam;
   procObjs.hBY=hBY; procObjs.hBSrcX=hBSrcX; procObjs.hBEndX=hBEndX;
 
-  // 雷射機體光暈（表示雷射正在運作）
-  var laserGlowMat=uvMat.clone();
-  laserGlowMat.opacity=0.15;
-  var laserGlow=new THREE.Mesh(new THREE.SphereGeometry(.06,16,16),laserGlowMat);
+  // 照明系統入射點光暈（在照明系統 X 位置，顯示雷射光進入照明系統）
+  var laserGlowMat=uvMat.clone();laserGlowMat.opacity=0.18;
+  var laserGlow=new THREE.Mesh(new THREE.SphereGeometry(.05,16,16),laserGlowMat);
   laserGlow.position.set(hBSrcX, hBY, rsCZ);laserGlow.visible=true;
   scene.add(laserGlow);procObjs.laserGlow=laserGlow;
 
-  // 雷射機體點光源
-  var laserPtLight=new THREE.PointLight(0x9900ff,0.3,0.6);
+  // 照明系統入射點光源
+  var laserPtLight=new THREE.PointLight(0x9900ff,0.3,0.5);
   laserPtLight.position.set(hBSrcX, hBY, rsCZ);scene.add(laserPtLight);
   procObjs.laserPtLight=laserPtLight;
 
