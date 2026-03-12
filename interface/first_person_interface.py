@@ -1211,7 +1211,10 @@ function createProcObjects(model){
   if(pobBot) pobBot.getWorldPosition(pobBotW);   else pobBotW.set(0.64,0.71,0.12);
   if(wChuck) wChuck.getWorldPosition(chuckW);    else chuckW.set(0.24,0.62,0.12);
   if(foupPort)foupPort.getWorldPosition(foupW);  else foupW.set(-0.93,1.04,0.64);
-  if(illumNode)illumNode.getWorldPosition(illumW);else illumW.set(pobTopW.x+0.45, pobTopW.y+0.28, pobTopW.z);
+  if(illumNode)illumNode.getWorldPosition(illumW);else illumW.set(pobTopW.x+0.32, pobTopW.y+0.25, pobTopW.z);
+  // 強制限制在機殼內（最大 rsCX+0.38，即 pobTopW.x+0.38）
+  illumW.x = Math.min(illumW.x, pobTopW.x + 0.38);
+  console.log('[DBG] illumNode found:',!!illumNode,' illumW.x:',illumW.x.toFixed(3));
 
   // 儲存動畫用基準位置
   procObjs.chuckW  = chuckW.clone();
