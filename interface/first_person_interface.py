@@ -866,6 +866,19 @@ loader.load('./asml_duv.glb',
       var box=new THREE.Box3().setFromObject(model);
       var c=box.getCenter(new THREE.Vector3()),s=box.getSize(new THREE.Vector3());
       model.position.set(-c.x,-box.min.y,-c.z);
+
+      // ── 玻璃外框輕微向右擴展，容納照明系統與雷射元件 ──────────────────────
+      // Wall_Right 向右平移；Roof/Inner_Floor/Wall_Back 在 X 方向縮放擴寬
+      var _xExpand = 1.13; // X 方向擴展比例
+      ['Roof','Inner_Floor','Wall_Back'].forEach(function(n){
+        var nd=sceneMeshMap[n]; if(nd) nd.scale.x *= _xExpand;
+      });
+      var _wr=sceneMeshMap['Wall_Right'];
+      if(_wr) _wr.position.x += 0.22;   // 右牆向右移 22cm
+      // 左牆也略向左，保持整體對稱感
+      var _wl=sceneMeshMap['Wall_Left'];
+      if(_wl) _wl.position.x -= 0.04;
+
       var worldBox=new THREE.Box3().setFromObject(model);
       createHMIScreen(worldBox);
       var r=Math.max(s.x,s.z)*0.85;
