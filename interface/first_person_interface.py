@@ -1202,6 +1202,11 @@ function createProcObjects(model){
     ['Wall_Right','Wall_Left','Wall_Back'].forEach(function(n){
       var nd=sceneMeshMap[n]; if(nd) nd.scale.y*=1.18;
     });
+    // Duct_Top 是通風管頂蓋（Y=2.38 的寬厚板），卡在照明系統上方，隱藏掉
+    var ductTop=sceneMeshMap['Duct_Top']; if(ductTop) ductTop.visible=false;
+    // Duct_Top 也移上去，避免遮擋（可選：隱藏更乾脆）
+    var dv1=sceneMeshMap['Duct_Vent1']; if(dv1) dv1.visible=false;
+    var dv2=sceneMeshMap['Duct_Vent2']; if(dv2) dv2.visible=false;
   })();
 
   // ── 材質 ──────────────────────────────────────────────────────────────────
