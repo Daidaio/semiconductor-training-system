@@ -1324,8 +1324,8 @@ function createProcObjects(model){
   //   ArF Laser（右） → 水平 hBeam → 照明系統頂部
   //   → 垂直向下貫穿照明系統 → 穿過光罩（rmBaseY）→ 穿過投影鏡組 → 晶圓
 
-  // 垂直光束起點：光罩上方 0.30m（避免使用 Illum_Barrel 節點，該節點 Y 偏低）
-  var beamTop = rsY + 0.30;   // 照明系統底部（光罩稍上方）
+  // 垂直光束起點：照明系統中心下方，與 illumW.y 對齊，確保 illumToLens 方向正確
+  var beamTop = illumW.y - 0.05;  // 約 2.385，略低於照明系統中心
   var beamBot = chuckW.y;
   var beamH   = beamTop - beamBot;
   var beamMidY= (beamTop + beamBot) / 2;
@@ -1383,9 +1383,10 @@ function createProcObjects(model){
   illuBeam.visible=true;
   scene.add(illuBeam);procObjs.illuBeam=illuBeam;
 
-  // ── 3. 照明系統出口 → 投影鏡頂：斜向連接（X 從 illumW.x 到 rsCX）──────────────
+  // ── 3. 照明系統出口 → 投影鏡頂：從照明出口斜向接 beamCyl 頂部 ─────────────────
+  // illumExitP(y=illumW.y-0.22) → lensTopP(y=beamTop-0.10)，保持往下方向
   var illumExitP=new THREE.Vector3(bX,  illumW.y-0.22, bZ);
-  var lensTopP  =new THREE.Vector3(rsCX, beamTop+0.02, rsCZ);
+  var lensTopP  =new THREE.Vector3(rsCX, beamTop-0.10, rsCZ);
   var illumToLens=makeBeamBetween(illumExitP, lensTopP, uvMat.clone(), 0.014);
   illumToLens.visible=true;
   scene.add(illumToLens);procObjs.illumToLens=illumToLens;
