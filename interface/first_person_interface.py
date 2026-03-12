@@ -1360,29 +1360,33 @@ function createProcObjects(model){
     return mesh;
   }
 
-  // ── 取得 Laser_Out 世界座標（雷射出口） ──────────────────────────────────────
-  var laserOutNode=sceneMeshMap['Laser_Out'];
-  var laserOutW=new THREE.Vector3();
-  if(laserOutNode) laserOutNode.getWorldPosition(laserOutW);
-  else laserOutW.set(illumW.x+0.45, illumW.y-0.30, illumW.z);
+  // ── 取得 Laser_Box 世界座標（ArF 雷射機箱，真正起點）────────────────────────
+  var laserBoxNode=sceneMeshMap['Laser_Box'];
+  var laserBoxW=new THREE.Vector3();
+  if(laserBoxNode) laserBoxNode.getWorldPosition(laserBoxW);
+  else laserBoxW.set(illumW.x+0.50, chuckW.y+0.20, illumW.z-0.50);
+  // 雷射出光口：機箱頂部中央
+  var laserTopP=new THREE.Vector3(laserBoxW.x, laserBoxW.y+0.20, laserBoxW.z+0.45);
 
-  // ── 1. ArF Laser → 照明系統入口（斜向光束）───────────────────────────────────
-  var illumEntryP=new THREE.Vector3(illumW.x, illumW.y-0.05, illumW.z);
-  var laserToIllum=makeBeamBetween(laserOutW, illumEntryP, uvMat.clone(), 0.010);
+  // ── 1. ArF Laser（右下）→ 照明系統入口（右上）：長斜升光束 ────────────────────
+  // 參考圖：右側垂直爬升的粉紅光束，從雷射到照明系統底部
+  var illumEntryP=new THREE.Vector3(illumW.x, illumW.y-0.10, illumW.z);
+  var laserToIllum=makeBeamBetween(laserTopP, illumEntryP, uvMat.clone(), 0.010);
   laserToIllum.visible=true;
   scene.add(laserToIllum);procObjs.laserToIllum=laserToIllum;
 
-  // ── 2. 照明系統內部垂直光束（桶內從上到下）────────────────────────────────────
-  var illuTop=new THREE.Vector3(illumW.x, illumW.y+0.18, illumW.z);
-  var illuBot=new THREE.Vector3(illumW.x, illumW.y-0.22, illumW.z);
-  var illuBeam=makeBeamBetween(illuTop, illuBot, uvMat.clone(), 0.022);
+  // ── 2. 照明系統內部垂直光束（桶內從頂部往下穿出）────────────────────────────
+  var illuTop=new THREE.Vector3(illumW.x, illumW.y+0.20, illumW.z);
+  var illuBot=new THREE.Vector3(illumW.x, illumW.y-0.20, illumW.z);
+  var illuBeam=makeBeamBetween(illuTop, illuBot, uvMat.clone(), 0.020);
   illuBeam.visible=true;
   scene.add(illuBeam);procObjs.illuBeam=illuBeam;
 
-  // ── 3. 照明系統出口 → 投影鏡組頂（斜向出射）─────────────────────────────────
-  var illumExitP=new THREE.Vector3(illumW.x, illumW.y-0.22, illumW.z);
-  var lensTopP  =new THREE.Vector3(rsCX, beamTop+0.05, rsCZ);
-  var illumToLens=makeBeamBetween(illumExitP, lensTopP, uvMat.clone(), 0.012);
+  // ── 3. 照明系統出口 → 投影鏡組光罩頂（垂直向下，Z 與投影鏡組對齊）────────────
+  // DUV 機台：照明系統出口在投影鏡組正上方，光束垂直向下射入光罩
+  var illumExitP=new THREE.Vector3(rsCX, illumW.y-0.20, rsCZ);  // 對齊投影鏡中心
+  var lensTopP  =new THREE.Vector3(rsCX, beamTop+0.02, rsCZ);
+  var illumToLens=makeBeamBetween(illumExitP, lensTopP, uvMat.clone(), 0.020);
   illumToLens.visible=true;
   scene.add(illumToLens);procObjs.illumToLens=illumToLens;
 
