@@ -1360,33 +1360,33 @@ function createProcObjects(model){
     return mesh;
   }
 
-  // ── 取得 Laser_Box 世界座標（ArF 雷射機箱，真正起點）────────────────────────
+  // ── 取得 Laser_Box 世界座標（ArF 雷射機箱） ──────────────────────────────────
   var laserBoxNode=sceneMeshMap['Laser_Box'];
   var laserBoxW=new THREE.Vector3();
   if(laserBoxNode) laserBoxNode.getWorldPosition(laserBoxW);
-  else laserBoxW.set(illumW.x+0.50, chuckW.y+0.20, illumW.z-0.50);
-  // 雷射出光口：機箱頂部中央
-  var laserTopP=new THREE.Vector3(laserBoxW.x, laserBoxW.y+0.20, laserBoxW.z+0.45);
+  else laserBoxW.set(illumW.x, chuckW.y+0.15, illumW.z);
 
-  // ── 1. ArF Laser（右下）→ 照明系統入口（右上）：長斜升光束 ────────────────────
-  // 參考圖：右側垂直爬升的粉紅光束，從雷射到照明系統底部
-  var illumEntryP=new THREE.Vector3(illumW.x, illumW.y-0.10, illumW.z);
-  var laserToIllum=makeBeamBetween(laserTopP, illumEntryP, uvMat.clone(), 0.010);
+  // 所有光束統一使用照明系統的 X/Z（避免 Z 偏移造成 3D 扭曲）
+  var bX=illumW.x, bZ=illumW.z;
+
+  // ── 1. 雷射到照明系統：右側垂直上升柱 ────────────────────────────────────────
+  var riseBot=new THREE.Vector3(bX, laserBoxW.y+0.15, bZ);
+  var riseTop=new THREE.Vector3(bX, illumW.y-0.15,    bZ);
+  var laserToIllum=makeBeamBetween(riseBot, riseTop, uvMat.clone(), 0.010);
   laserToIllum.visible=true;
   scene.add(laserToIllum);procObjs.laserToIllum=laserToIllum;
 
-  // ── 2. 照明系統內部垂直光束（桶內從頂部往下穿出）────────────────────────────
-  var illuTop=new THREE.Vector3(illumW.x, illumW.y+0.20, illumW.z);
-  var illuBot=new THREE.Vector3(illumW.x, illumW.y-0.20, illumW.z);
+  // ── 2. 照明系統桶內垂直光束 ───────────────────────────────────────────────────
+  var illuTop=new THREE.Vector3(bX, illumW.y+0.20, bZ);
+  var illuBot=new THREE.Vector3(bX, illumW.y-0.20, bZ);
   var illuBeam=makeBeamBetween(illuTop, illuBot, uvMat.clone(), 0.020);
   illuBeam.visible=true;
   scene.add(illuBeam);procObjs.illuBeam=illuBeam;
 
-  // ── 3. 照明系統出口 → 投影鏡組光罩頂（垂直向下，Z 與投影鏡組對齊）────────────
-  // DUV 機台：照明系統出口在投影鏡組正上方，光束垂直向下射入光罩
-  var illumExitP=new THREE.Vector3(rsCX, illumW.y-0.20, rsCZ);  // 對齊投影鏡中心
+  // ── 3. 照明系統出口 → 投影鏡頂：斜向連接（X 從 illumW.x 到 rsCX）──────────────
+  var illumExitP=new THREE.Vector3(bX,  illumW.y-0.22, bZ);
   var lensTopP  =new THREE.Vector3(rsCX, beamTop+0.02, rsCZ);
-  var illumToLens=makeBeamBetween(illumExitP, lensTopP, uvMat.clone(), 0.020);
+  var illumToLens=makeBeamBetween(illumExitP, lensTopP, uvMat.clone(), 0.014);
   illumToLens.visible=true;
   scene.add(illumToLens);procObjs.illumToLens=illumToLens;
 
