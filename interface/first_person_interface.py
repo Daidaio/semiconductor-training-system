@@ -1189,12 +1189,18 @@ var procElapsed=0;
 function createProcObjects(model){
   model.traverse(function(o){if(o.name)sceneMeshMap[o.name]=o;});
 
-  // ── 玻璃外框向右擴展，容納照明系統與雷射元件（sceneMeshMap 已填充）───────
+  // ── 玻璃外框擴展，容納照明系統與雷射元件（sceneMeshMap 已填充）────────────
   (function(){
-    var wr=sceneMeshMap['Wall_Right']; if(wr){wr.position.x+=0.28; wr.position.y+=0.06;}
+    // X 擴展：右牆右移，頂/底/後板加寬
+    var wr=sceneMeshMap['Wall_Right']; if(wr) wr.position.x+=0.28;
     var wl=sceneMeshMap['Wall_Left'];  if(wl) wl.position.x-=0.05;
     ['Roof','Inner_Floor','Wall_Back'].forEach(function(n){
-      var nd=sceneMeshMap[n]; if(nd){nd.scale.x*=1.16; nd.scale.y*=1.04;}
+      var nd=sceneMeshMap[n]; if(nd) nd.scale.x*=1.16;
+    });
+    // Y 擴展：頂板上移，三面牆拉高（scale.y），底板不動
+    var roof=sceneMeshMap['Roof']; if(roof) roof.position.y+=0.22;
+    ['Wall_Right','Wall_Left','Wall_Back'].forEach(function(n){
+      var nd=sceneMeshMap[n]; if(nd) nd.scale.y*=1.18;
     });
   })();
 
