@@ -1349,37 +1349,59 @@ function createProcObjects(model){
   beamSpot.position.set(rsCX,chuckW.y+0.002,rsCZ);beamSpot.visible=false;
   scene.add(beamSpot);procObjs.beamSpotGlow=beamSpot;
 
-  // 水平光束：雷射(照明系統側面) → 投影鏡組頂(rsCX)
-  // 起點用 illumW.x（照明系統中心 X），終點 rsCX（投影鏡頂中心 X）
-  var hBY    = beamTop + 0.25;           // 照明系統下緣高度
-  var hBSrcX = illumW.x;                 // 照明系統中心 X（=雷射輸出端）
-  var hBEndX = rsCX;                     // 投影鏡頂中心 X
-  var hBLen  = Math.abs(hBSrcX - hBEndX);
-  if(hBLen < 0.05) hBLen = 0.35;        // fallback 最小長度
-  var hBMidX = (hBSrcX + hBEndX) * 0.5;
-  var hBeam=new THREE.Mesh(new THREE.CylinderGeometry(.012,.012,hBLen,8),uvMat.clone());
-  hBeam.rotation.z=Math.PI/2;
-  hBeam.position.set(hBMidX, hBY, rsCZ);hBeam.visible=true;
-  scene.add(hBeam);procObjs.hBeam=hBeam;
-  procObjs.hBY=hBY; procObjs.hBSrcX=hBSrcX; procObjs.hBEndX=hBEndX;
+  // ── 工具函式：在兩點間建立圓柱光束 ──────────────────────────────────────────
+  function makeBeamBetween(p1,p2,mat,r){
+    var dir=new THREE.Vector3().subVectors(p2,p1);
+    var len=dir.length(); if(len<0.01)len=0.01;
+    var mid=new THREE.Vector3().addVectors(p1,p2).multiplyScalar(0.5);
+    var mesh=new THREE.Mesh(new THREE.CylinderGeometry(r,r,len,8),mat);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize());
+    mesh.position.copy(mid);
+    return mesh;
+  }
 
-  // 照明系統入射點光暈（在照明系統 X 位置，顯示雷射光進入照明系統）
+  // ── 取得 Laser_Out 世界座標（雷射出口） ──────────────────────────────────────
+  var laserOutNode=sceneMeshMap['Laser_Out'];
+  var laserOutW=new THREE.Vector3();
+  if(laserOutNode) laserOutNode.getWorldPosition(laserOutW);
+  else laserOutW.set(illumW.x+0.45, illumW.y-0.30, illumW.z);
+
+  // ── 1. ArF Laser → 照明系統入口（斜向光束）───────────────────────────────────
+  var illumEntryP=new THREE.Vector3(illumW.x, illumW.y-0.05, illumW.z);
+  var laserToIllum=makeBeamBetween(laserOutW, illumEntryP, uvMat.clone(), 0.010);
+  laserToIllum.visible=true;
+  scene.add(laserToIllum);procObjs.laserToIllum=laserToIllum;
+
+  // ── 2. 照明系統內部垂直光束（桶內從上到下）────────────────────────────────────
+  var illuTop=new THREE.Vector3(illumW.x, illumW.y+0.18, illumW.z);
+  var illuBot=new THREE.Vector3(illumW.x, illumW.y-0.22, illumW.z);
+  var illuBeam=makeBeamBetween(illuTop, illuBot, uvMat.clone(), 0.022);
+  illuBeam.visible=true;
+  scene.add(illuBeam);procObjs.illuBeam=illuBeam;
+
+  // ── 3. 照明系統出口 → 投影鏡組頂（斜向出射）─────────────────────────────────
+  var illumExitP=new THREE.Vector3(illumW.x, illumW.y-0.22, illumW.z);
+  var lensTopP  =new THREE.Vector3(rsCX, beamTop+0.05, rsCZ);
+  var illumToLens=makeBeamBetween(illumExitP, lensTopP, uvMat.clone(), 0.012);
+  illumToLens.visible=true;
+  scene.add(illumToLens);procObjs.illumToLens=illumToLens;
+
+  // 舊 hBeam 保留相容性（長度設 0，實際隱藏）
+  var hBeam=new THREE.Mesh(new THREE.CylinderGeometry(0,0,0,4),uvMat.clone());
+  scene.add(hBeam);procObjs.hBeam=hBeam;
+  var hBY=illumW.y; var hBSrcX=illumW.x; var hBEndX=rsCX;
+  procObjs.hBY=hBY;procObjs.hBSrcX=hBSrcX;procObjs.hBEndX=hBEndX;
+
+  // 照明系統入射點光暈
   var laserGlowMat=uvMat.clone();laserGlowMat.opacity=0.18;
   var laserGlow=new THREE.Mesh(new THREE.SphereGeometry(.05,16,16),laserGlowMat);
-  laserGlow.position.set(hBSrcX, hBY, rsCZ);laserGlow.visible=true;
+  laserGlow.position.copy(illumEntryP);laserGlow.visible=true;
   scene.add(laserGlow);procObjs.laserGlow=laserGlow;
 
-  // 照明系統入射點光源
+  // 照明系統點光源
   var laserPtLight=new THREE.PointLight(0x9900ff,0.3,0.5);
-  laserPtLight.position.set(hBSrcX, hBY, rsCZ);scene.add(laserPtLight);
+  laserPtLight.position.copy(illumEntryP);scene.add(laserPtLight);
   procObjs.laserPtLight=laserPtLight;
-
-  // 照明系統內部垂直光束：從雷射入射點(hBY) 向下到投影鏡組頂(beamTop)
-  var illuH = hBY - beamTop;
-  var illuMidY = (hBY + beamTop) / 2;
-  var illuBeam=new THREE.Mesh(new THREE.CylinderGeometry(.025,.055,illuH,12),uvMat.clone());
-  illuBeam.position.set(rsCX,illuMidY,rsCZ);illuBeam.visible=true;
-  scene.add(illuBeam);procObjs.illuBeam=illuBeam;
 
   beamPtLight=new THREE.PointLight(0x9900ff,0,1.4);
   beamPtLight.position.set(rsCX,chuckW.y+0.06,rsCZ);scene.add(beamPtLight);
@@ -1513,6 +1535,8 @@ function updateProcessAnim(dt){
         }
         if(procObjs.hBeam)procObjs.hBeam.material.opacity=0.35+pulse*0.35;
         if(procObjs.illuBeam)procObjs.illuBeam.material.opacity=0.40+pulse*0.45;
+        if(procObjs.laserToIllum)procObjs.laserToIllum.material.opacity=0.35+pulse*0.45;
+        if(procObjs.illumToLens)procObjs.illumToLens.material.opacity=0.35+pulse*0.45;
         if(procObjs.laserGlow){
           procObjs.laserGlow.material.opacity=0.30+pulse*0.55;
           var s=0.9+pulse*0.4; procObjs.laserGlow.scale.setScalar(s);
@@ -1535,6 +1559,8 @@ function updateProcessAnim(dt){
         if(procObjs.beamCyl)procObjs.beamCyl.material.opacity=baseOpacity;
         if(procObjs.illuBeam)procObjs.illuBeam.material.opacity=baseOpacity;
         if(procObjs.hBeam)procObjs.hBeam.material.opacity=baseOpacity*0.8;
+        if(procObjs.laserToIllum)procObjs.laserToIllum.material.opacity=baseOpacity;
+        if(procObjs.illumToLens)procObjs.illumToLens.material.opacity=baseOpacity;
         if(procObjs.laserGlow){
           procObjs.laserGlow.material.opacity=baseOpacity*0.7;
           procObjs.laserGlow.scale.setScalar(1.0);
