@@ -1216,24 +1216,25 @@ function createProcObjects(model){
   // ── 取得關鍵 GLB 節點的「世界座標」────────────────────────────────────────
   // GLB 節點是 model 的子物件，.position 是局部座標；
   // 必須用 getWorldPosition() 才能取得正確世界座標
-  var pobTop   = sceneMeshMap['POB_Top_Cap'];
-  var pobBot   = sceneMeshMap['POB_Bottom'];
-  var wChuck   = sceneMeshMap['Wafer_Chuck'];
-  var foupPort = sceneMeshMap['FOUP_Port'];
-  // 照明系統：用 IllumLens_0（第一片透鏡）定位照明系統中心
-  var illumNode= sceneMeshMap['IllumLens_0'] || sceneMeshMap['IllumLens_1'];
+  var pobTop    = sceneMeshMap['POB_Top_Cap'];
+  var pobBot    = sceneMeshMap['POB_Bottom'];
+  var wChuck    = sceneMeshMap['Wafer_Chuck'];
+  var foupPort  = sceneMeshMap['FOUP_Port'];
+  var illumBarrel = sceneMeshMap['Illum_Barrel']; // 照明系統圓柱桶體
 
   var pobTopW =new THREE.Vector3(); var pobBotW=new THREE.Vector3();
   var chuckW  =new THREE.Vector3(); var foupW  =new THREE.Vector3();
   var illumW  =new THREE.Vector3();
-  if(pobTop) pobTop.getWorldPosition(pobTopW);   else pobTopW.set(0.64,2.19,0.12);
-  if(pobBot) pobBot.getWorldPosition(pobBotW);   else pobBotW.set(0.64,0.71,0.12);
-  if(wChuck) wChuck.getWorldPosition(chuckW);    else chuckW.set(0.24,0.62,0.12);
-  if(foupPort)foupPort.getWorldPosition(foupW);  else foupW.set(-0.93,1.04,0.64);
-  // 光束從右側進入玻璃光學區的點，固定在 pobTopW.x+0.20（玻璃內壁安全範圍）
-  // 不依賴 IllumLens 節點，因其世界座標可能在玻璃外壁之外
-  illumW.set(pobTopW.x + 0.20, pobTopW.y + 0.22, pobTopW.z);
-  console.log('[DBG] illumW:',illumW.x.toFixed(3),illumW.y.toFixed(3));
+  if(pobTop)    pobTop.getWorldPosition(pobTopW);    else pobTopW.set(0.64,2.19,0.12);
+  if(pobBot)    pobBot.getWorldPosition(pobBotW);    else pobBotW.set(0.64,0.71,0.12);
+  if(wChuck)    wChuck.getWorldPosition(chuckW);     else chuckW.set(0.24,0.62,0.12);
+  if(foupPort)  foupPort.getWorldPosition(foupW);    else foupW.set(-0.93,1.04,0.64);
+  // 照明系統圓柱的世界座標（光束起點）
+  if(illumBarrel) illumBarrel.getWorldPosition(illumW);
+  else illumW.set(pobTopW.x+0.38, pobTopW.y+0.30, pobTopW.z);
+  // X 不能超出牆壁（安全上限）
+  illumW.x = Math.min(illumW.x, pobTopW.x + 0.55);
+  console.log('[DBG] Illum_Barrel found:',!!illumBarrel,' illumW:',illumW.x.toFixed(3),illumW.y.toFixed(3));
 
   // 儲存動畫用基準位置
   procObjs.chuckW  = chuckW.clone();
@@ -1351,7 +1352,7 @@ function createProcObjects(model){
   var hBLen  = Math.abs(hBSrcX - hBEndX);
   if(hBLen < 0.05) hBLen = 0.35;        // fallback 最小長度
   var hBMidX = (hBSrcX + hBEndX) * 0.5;
-  var hBeam=new THREE.Mesh(new THREE.CylinderGeometry(.007,.007,hBLen,8),uvMat.clone());
+  var hBeam=new THREE.Mesh(new THREE.CylinderGeometry(.012,.012,hBLen,8),uvMat.clone());
   hBeam.rotation.z=Math.PI/2;
   hBeam.position.set(hBMidX, hBY, rsCZ);hBeam.visible=true;
   scene.add(hBeam);procObjs.hBeam=hBeam;
