@@ -158,6 +158,90 @@ canvas{position:fixed;top:0;left:0;display:block;}
   border-radius:6px;padding:8px 10px;text-align:center;}
 .hmi-info-row{display:flex;justify-content:space-between;font-size:11px;
   padding:4px 0;border-bottom:1px solid #0d1b2a;}
+/* ── Maintenance Panel ── */
+#maint-overlay{position:fixed;top:0;left:0;width:100%;height:100%;z-index:700;
+  display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.65);}
+#maint-modal{background:linear-gradient(180deg,#07100e,#050e0c);width:520px;max-height:82vh;
+  border:1px solid #1a6a4c;border-radius:12px;display:flex;flex-direction:column;
+  overflow:hidden;box-shadow:0 0 40px rgba(64,255,170,.12);}
+#maint-hdr{background:linear-gradient(135deg,#0a1e18,#081814);
+  border-bottom:2px solid #1a5a3c;padding:13px 18px;
+  display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
+#maint-hdr-title{color:#4fc;font-size:13px;font-weight:bold;letter-spacing:1.5px;}
+#maint-hdr-sub{color:#5a9a7a;font-size:11px;margin-top:2px;}
+#maint-close-btn{background:rgba(255,68,68,.15);border:1px solid #ff4444;color:#ff4444;
+  padding:5px 14px;border-radius:6px;font:11px Consolas,monospace;cursor:pointer;}
+#maint-body{overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;}
+.maint-step{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;
+  border-radius:8px;border:1px solid #1a3a2c;background:rgba(10,24,18,.6);
+  cursor:pointer;transition:.2s;}
+.maint-step:hover{border-color:#2a6a4c;background:rgba(10,30,22,.8);}
+.maint-step.done{border-color:#1a5a3c;background:rgba(10,40,28,.8);cursor:default;opacity:.7;}
+.maint-step.active{border-color:#4fc;background:rgba(10,40,30,.9);box-shadow:0 0 12px rgba(64,255,192,.15);}
+.maint-step.locked{opacity:.4;cursor:not-allowed;}
+.maint-step-no{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0;margin-top:1px;}
+.maint-step.done .maint-step-no{background:#1a5a3c;color:#4fc;}
+.maint-step.active .maint-step-no{background:#1a6a4c;color:#4fc;box-shadow:0 0 8px rgba(64,255,192,.4);}
+.maint-step.locked .maint-step-no,.maint-step:not(.done):not(.active):not(.locked) .maint-step-no
+  {background:#0a2018;color:#5a8a7a;}
+.maint-step-info{flex:1;}
+.maint-step-title{font-size:12px;font-weight:bold;color:#9de;margin-bottom:3px;}
+.maint-step.done .maint-step-title{color:#5a9a7a;}
+.maint-step-desc{font-size:11px;color:#6a9a8a;line-height:1.5;}
+.maint-step-action{display:none;margin-top:8px;}
+.maint-step.active .maint-step-action{display:block;}
+.maint-action-btn{background:linear-gradient(135deg,#0a3028,#0d4038);
+  border:1px solid #4fc;color:#4fc;padding:7px 18px;border-radius:6px;
+  font-size:11px;cursor:pointer;letter-spacing:.5px;}
+.maint-action-btn:hover{background:linear-gradient(135deg,#0d4038,#1a6050);}
+.maint-progress{height:4px;background:#0a2018;border-radius:2px;overflow:hidden;margin-bottom:4px;}
+.maint-progress-bar{height:100%;background:linear-gradient(90deg,#1a9a6c,#4fc);
+  border-radius:2px;transition:width .4s;}
+.maint-status{font-size:11px;color:#5a9a7a;display:flex;justify-content:space-between;}
+.maint-complete{text-align:center;padding:20px;color:#4fc;font-size:14px;display:none;}
+/* ── CDU Tab ── */
+#hmi-tabs{display:flex;gap:0;border-bottom:1px solid #1a4a7c;flex-shrink:0;padding:0 14px;}
+.hmi-tab{padding:8px 18px;font-size:11px;letter-spacing:1px;color:#5a8a9a;
+  cursor:pointer;border-bottom:2px solid transparent;transition:.2s;}
+.hmi-tab:hover{color:#9ab;}
+.hmi-tab.active{color:#4af;border-bottom-color:#4af;}
+#cdu-panel{display:none;flex-direction:column;gap:14px;padding:14px;}
+.cdu-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+.cdu-ctrl{display:flex;flex-direction:column;gap:4px;min-width:110px;}
+.cdu-ctrl label{font-size:10px;color:#6ab;letter-spacing:1px;}
+.cdu-ctrl input[type=range]{width:100%;accent-color:#4af;}
+.cdu-ctrl select{background:#0a1828;border:1px solid #1a4a7c;color:#cde;
+  padding:4px 8px;border-radius:4px;font-size:11px;}
+.cdu-ctrl .val-display{font-size:11px;color:#4af;font-family:Consolas,monospace;text-align:right;}
+#cdu-expose-btn{background:linear-gradient(135deg,#0a2a4a,#0d3a6a);
+  border:1px solid #4af;color:#4af;padding:8px 20px;border-radius:6px;
+  font-size:12px;cursor:pointer;letter-spacing:1px;align-self:flex-end;}
+#cdu-expose-btn:hover{background:linear-gradient(135deg,#0d3a6a,#1050a0);}
+#cdu-expose-btn:disabled{opacity:.5;cursor:not-allowed;}
+.cdu-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.cdu-metric{background:rgba(10,18,32,.8);border:1px solid #1a3a5c;
+  border-radius:6px;padding:10px;text-align:center;}
+.cdu-metric .label{font-size:9px;color:#6ab;letter-spacing:1px;margin-bottom:4px;}
+.cdu-metric .value{font-size:16px;font-weight:bold;font-family:Consolas,monospace;color:#4af;}
+.cdu-metric .unit{font-size:9px;color:#5a8a9a;}
+.cdu-metric.warn .value{color:#ffaa00;}
+.cdu-metric.alarm .value{color:#ff4444;}
+#cdu-map-canvas{border:1px solid #1a3a5c;border-radius:6px;background:#030810;}
+#cdu-trend-canvas{border:1px solid #1a3a5c;border-radius:6px;background:#030810;}
+.cdu-row{display:flex;gap:12px;align-items:flex-start;}
+.cdu-col{display:flex;flex-direction:column;gap:6px;}
+.cdu-col-label{font-size:10px;color:#6ab;letter-spacing:1px;text-align:center;}
+.lens-temps{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;}
+.lens-temp-cell{background:rgba(10,18,32,.8);border:1px solid #1a3a5c;
+  border-radius:5px;padding:6px 8px;text-align:center;}
+.lens-temp-cell .name{font-size:9px;color:#6ab;}
+.lens-temp-cell .temp{font-size:13px;font-weight:bold;font-family:Consolas,monospace;}
+.fault-btns{display:flex;gap:6px;flex-wrap:wrap;}
+.fault-btn{padding:5px 10px;border-radius:4px;font-size:10px;cursor:pointer;
+  background:rgba(255,60,60,.1);border:1px solid #ff4444;color:#ff8888;}
+.fault-btn:hover{background:rgba(255,60,60,.25);}
+.fault-btn.clear{background:rgba(60,255,100,.1);border-color:#44ff88;color:#88ffaa;}
 </style>
 </head><body>
 
@@ -233,14 +317,132 @@ canvas{position:fixed;top:0;left:0;display:block;}
 </div>
 
 <!-- HMI Overlay -->
+<!-- Maintenance Panel -->
+<div id="maint-overlay">
+  <div id="maint-modal">
+    <div id="maint-hdr">
+      <div>
+        <div id="maint-hdr-title">🔧 維修程序</div>
+        <div id="maint-hdr-sub"></div>
+      </div>
+      <button id="maint-close-btn" onclick="closeMaintenance()">✕ 離開</button>
+    </div>
+    <div id="maint-body">
+      <div class="maint-progress">
+        <div class="maint-progress-bar" id="maint-prog-bar" style="width:0%"></div>
+      </div>
+      <div class="maint-status">
+        <span id="maint-prog-text">步驟 0 / 0</span>
+        <span id="maint-fault-label"></span>
+      </div>
+      <div id="maint-steps"></div>
+      <div class="maint-complete" id="maint-complete">
+        ✅ 維修完成！系統已恢復正常。
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="hmi-overlay">
   <div id="hmi-modal">
     <div id="hmi-modal-hdr">
       <span>⚙ ASML TWINSCAN NXT:870 — HMI 控制面板</span>
       <button id="hmi-close" onclick="closeHMI()">✕ 關閉 [ESC]</button>
     </div>
-    <div id="hmi-content">
-      <div style="color:#5a8a9a;text-align:center;padding:24px;">載入感測器資料…</div>
+    <!-- Tabs -->
+    <div id="hmi-tabs">
+      <div class="hmi-tab active" onclick="switchHmiTab('sensor')">感測器 &amp; 警報</div>
+      <div class="hmi-tab" onclick="switchHmiTab('cdu')">CDU / Overlay 模擬</div>
+    </div>
+    <!-- Tab: 感測器 (original) -->
+    <div id="hmi-sensor-panel">
+      <div id="hmi-content">
+        <div style="color:#5a8a9a;text-align:center;padding:24px;">載入感測器資料…</div>
+      </div>
+    </div>
+    <!-- Tab: CDU / Overlay 模擬 -->
+    <div id="cdu-panel">
+      <!-- 曝光參數控制 -->
+      <div class="hmi-section">
+        <div class="hmi-section-title">曝光參數控制</div>
+        <div class="cdu-controls">
+          <div class="cdu-ctrl">
+            <label>DOSE (mJ/cm²)</label>
+            <input type="range" id="ctrl-dose" min="20" max="50" step="0.5" value="30"
+              oninput="document.getElementById('dose-val').textContent=this.value">
+            <div class="val-display"><span id="dose-val">30</span> mJ/cm²</div>
+          </div>
+          <div class="cdu-ctrl">
+            <label>FOCUS OFFSET (nm)</label>
+            <input type="range" id="ctrl-focus" min="-200" max="200" step="5" value="0"
+              oninput="document.getElementById('focus-val').textContent=this.value">
+            <div class="val-display"><span id="focus-val">0</span> nm</div>
+          </div>
+          <div class="cdu-ctrl">
+            <label>NA</label>
+            <select id="ctrl-na">
+              <option value="0.60">0.60 (低)</option>
+              <option value="0.75" selected>0.75 (標準)</option>
+              <option value="0.85">0.85 (高)</option>
+            </select>
+          </div>
+          <div class="cdu-ctrl">
+            <label>SIGMA</label>
+            <select id="ctrl-sigma">
+              <option value="0.50">0.50 (小)</option>
+              <option value="0.75" selected>0.75 (標準)</option>
+              <option value="0.90">0.90 (大)</option>
+            </select>
+          </div>
+          <button id="cdu-expose-btn" onclick="runExposure()">▶ 曝光模擬</button>
+        </div>
+      </div>
+      <!-- 故障注入 -->
+      <div class="hmi-section">
+        <div class="hmi-section-title">故障注入 (SECOM Scenario)</div>
+        <div class="fault-btns">
+          <button class="fault-btn" onclick="injectFault('dose_drift')">劑量漂移</button>
+          <button class="fault-btn" onclick="injectFault('focus_drift')">焦距漂移</button>
+          <button class="fault-btn" onclick="injectFault('lens_hotspot')">鏡片過熱</button>
+          <button class="fault-btn" onclick="injectFault('contamination')">光罩污染</button>
+          <button class="fault-btn" onclick="injectFault('stage_error')">載台誤差</button>
+          <button class="fault-btn clear" onclick="clearFault()">✓ 恢復正常</button>
+        </div>
+        <div id="fault-status" style="margin-top:6px;font-size:11px;color:#88ffaa;"></div>
+      </div>
+      <!-- 結果指標 -->
+      <div class="cdu-metrics" id="cdu-metrics">
+        <div class="cdu-metric"><div class="label">CD MEAN</div>
+          <div class="value" id="m-cd">—</div><div class="unit">nm</div></div>
+        <div class="cdu-metric"><div class="label">CD 3σ</div>
+          <div class="value" id="m-cd3s">—</div><div class="unit">nm</div></div>
+        <div class="cdu-metric"><div class="label">OVL X 3σ</div>
+          <div class="value" id="m-ovx">—</div><div class="unit">nm</div></div>
+        <div class="cdu-metric"><div class="label">OVL Y 3σ</div>
+          <div class="value" id="m-ovy">—</div><div class="unit">nm</div></div>
+        <div class="cdu-metric"><div class="label">FOCUS DRIFT</div>
+          <div class="value" id="m-fdrift">—</div><div class="unit">nm</div></div>
+        <div class="cdu-metric"><div class="label">MAG ERROR</div>
+          <div class="value" id="m-mag">—</div><div class="unit">ppm</div></div>
+        <div class="cdu-metric"><div class="label">HEALTH</div>
+          <div class="value" id="m-health">—</div><div class="unit">%</div></div>
+        <div class="cdu-metric"><div class="label">WAFER</div>
+          <div class="value" id="m-wno">—</div><div class="unit">#</div></div>
+      </div>
+      <!-- CDU Map + Trend Chart -->
+      <div class="cdu-row">
+        <div class="cdu-col">
+          <div class="cdu-col-label">CDU MAP (13×13 grid, nm)</div>
+          <canvas id="cdu-map-canvas" width="260" height="260"></canvas>
+        </div>
+        <div class="cdu-col" style="flex:1;">
+          <div class="cdu-col-label">CD / Overlay 趨勢（最近 30 片）</div>
+          <canvas id="cdu-trend-canvas" width="340" height="260"></canvas>
+          <!-- 鏡片溫度 -->
+          <div class="cdu-col-label" style="margin-top:10px;">鏡片溫升 ΔT (K)</div>
+          <div class="lens-temps" id="lens-temps"></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -508,10 +710,211 @@ function isShellMesh(obj){return shellMeshes.indexOf(obj)!==-1;}
 function enterInterior(){
   insideMode=true;
   if(typeof exteriorShell!=='undefined') exteriorShell.visible=false;
+  // 個別隱藏 shell meshes，避免 raycaster 仍打到它們（Three.js 只看 mesh 自身 visible）
+  shellMeshes.forEach(function(m){m.visible=false;});
   if(glbModel) glbModel.visible=true;
   camera.position.set(0,1.6,4);
   addMsg('sys','已進入機器內部。靠近部件按 <b>E</b> 檢查，靠近 HMI 螢幕按 <b>E</b> 查看感測器數值。');
 }
+
+// ── Maintenance SOP 資料 ────────────────────────────────────────────────────────
+// 每個故障對應：觸發節點名稱、SOP 步驟、故障描述
+var MAINT_SOP = {
+  // 真空系統異常（AI 對話觸發）
+  vacuum_abnormal: {
+    title: '真空系統異常',
+    subtitle: 'Vacuum System Fault — 接頭洩漏 / 閥門故障',
+    triggerMeshes: ['Duct_Top','Duct_Vent1','Duct_Vent2'],
+    fault_api: null,  // 由 AI 對話觸發，不從 SECOM 注入
+    steps: [
+      {title:'確認系統狀態', desc:'查看 HMI 真空壓力讀值，確認異常壓力範圍。\n正常值：< 1×10⁻³ mbar', action:'確認壓力讀值'},
+      {title:'關閉真空閥門 V-201', desc:'找到排氣管路旁的 V-201 閥門，順時針轉緊關閉，\n防止洩漏範圍擴大。', action:'關閉閥門'},
+      {title:'檢查接頭密封性', desc:'目視檢查管路接頭是否有鬆脫或破損，\n用手輕壓接頭確認固定狀態。', action:'確認接頭緊固'},
+      {title:'更換 O-ring 密封圈', desc:'若接頭密封圈老化，需更換新的 O-ring（型號：AS-568A-116）\n並確認安裝方向正確。', action:'完成更換'},
+      {title:'重新抽真空', desc:'打開泵浦，緩慢開啟 V-201，\n觀察壓力計是否在 5 分鐘內恢復至正常範圍。', action:'開啟抽真空'},
+      {title:'確認壓力恢復', desc:'壓力讀值穩定在 < 1×10⁻³ mbar 且無持續下降趨勢，\n系統恢復正常。', action:'確認完成'},
+    ]
+  },
+  // 冷卻水異常
+  cooling_water: {
+    title: '冷卻水系統異常',
+    subtitle: 'Cooling Water Fault — 流量不足 / 溫度異常',
+    triggerMeshes: ['Immersion_Hood','Immersion_Supply','Immersion_Return'],
+    fault_api: null,
+    steps: [
+      {title:'查看流量計讀值', desc:'HMI 顯示冷卻水流量，正常值：12–15 L/min。\n目前讀值異常，需進一步排查。', action:'確認流量讀值'},
+      {title:'關閉冷卻水進水閥', desc:'找到進水管路上的藍色手動閥，逆時針轉動關閉，\n停止水流以便檢查。', action:'關閉進水閥'},
+      {title:'檢查管路是否洩漏', desc:'目視檢查 Immersion Hood 周圍的管路接頭，\n查看是否有水漬、潮濕痕跡。', action:'確認管路無洩漏'},
+      {title:'清潔過濾器', desc:'拆下進水口過濾器，用清水沖洗後重新裝回，\n過濾器堵塞是流量不足最常見原因。', action:'完成清潔'},
+      {title:'恢復供水並確認流量', desc:'慢慢打開進水閥，觀察流量計是否恢復正常，\n同時確認溫度回到 22±0.1°C。', action:'確認流量正常'},
+    ]
+  },
+  // 鏡片過熱（SECOM lens_hotspot）
+  lens_hotspot: {
+    title: '投影鏡片過熱',
+    subtitle: 'Projection Lens Thermal Anomaly — 需降溫處理',
+    triggerMeshes: ['POB_Barrel','POB_Top_Cap','POB_Bottom'],
+    fault_api: 'lens_hotspot',
+    steps: [
+      {title:'確認鏡片溫度', desc:'在 HMI CDU 面板查看各鏡片元件溫升。\n正常待機溫升應 < 0.5 K，目前超標。', action:'查看溫度數值'},
+      {title:'降低曝光劑量', desc:'立即在 HMI 將 Dose 降低 20%（例如 30→24 mJ/cm²），\n減少熱輸入給鏡片。', action:'已調降 Dose'},
+      {title:'等待自然冷卻', desc:'停止曝光，等待鏡片溫度透過自然對流冷卻。\n依熱時間常數（τ₁≈90s, τ₂≈15min），\n需等待約 5 分鐘。', action:'確認溫度下降中'},
+      {title:'檢查冷卻水流量', desc:'確認鏡筒冷卻水迴路流量是否正常，\n鏡筒周圍溫度感測器讀值應趨近室溫。', action:'確認冷卻正常'},
+      {title:'恢復曝光並監控', desc:'緩慢恢復正常劑量，持續監控 CDU 趨勢圖，\n確認 CD 3σ 回到規格內（< 4 nm）。', action:'確認 CDU 恢復正常'},
+    ]
+  },
+  // 光罩污染（SECOM contamination）
+  contamination: {
+    title: '光罩污染',
+    subtitle: 'Reticle Contamination — 需清潔或更換',
+    triggerMeshes: ['Reticle_Stage_Mesh','Reticle_Mesh'],
+    fault_api: 'contamination',
+    steps: [
+      {title:'確認污染位置', desc:'在 HMI 查看 CDU Map，污染通常表現為\n特定 field 位置的系統性 CD 偏移。', action:'確認異常 field'},
+      {title:'停機並卸載光罩', desc:'通知工程師停止生產，\n按 SOP 將光罩從 reticle stage 取出並放入專用載具。', action:'光罩已卸載'},
+      {title:'目視檢查光罩', desc:'在潔淨燈箱下目視檢查光罩表面，\n尋找顆粒、水漬、或圖案損傷。', action:'確認污染位置'},
+      {title:'光罩清潔（或更換）', desc:'輕微污染：使用 DI water + 氮氣吹淨。\n嚴重污染：送回光罩廠重新清潔或更換。', action:'清潔/更換完成'},
+      {title:'裝回並執行對準', desc:'裝回光罩，執行 reticle alignment，\n確認套刻誤差在規格內後恢復生產。', action:'對準完成'},
+    ]
+  },
+  // 載台位置誤差（SECOM stage_error）
+  stage_error: {
+    title: '晶圓載台位置誤差',
+    subtitle: 'Wafer Stage Position Error — Overlay 超規',
+    triggerMeshes: ['Wafer_Chuck','Stage_Base','Wafer'],
+    fault_api: 'stage_error',
+    steps: [
+      {title:'確認 Overlay 數值', desc:'在 HMI CDU 面板查看 Overlay X/Y 3σ 值，\n超過 4 nm 時需介入。', action:'確認 Overlay 數值'},
+      {title:'執行載台校正', desc:'啟動 stage calibration routine，\n系統自動量測 interferometer 讀值並補償。', action:'執行 Cal Routine'},
+      {title:'檢查氣浮軸承', desc:'確認載台氣浮壓力正常（0.4–0.6 MPa），\n氣壓不足會導致載台摩擦增加。', action:'確認氣浮壓力'},
+      {title:'確認 Overlay 改善', desc:'重新曝光測試片，量測 Overlay，\n確認 X/Y 3σ < 2 nm 後恢復量產。', action:'Overlay 合格'},
+    ]
+  },
+  // 劑量漂移（SECOM dose_drift）
+  dose_drift: {
+    title: '曝光劑量漂移',
+    subtitle: 'Dose Drift — 雷射能量衰減 / 感測器偏移',
+    triggerMeshes: ['Laser_Box','Laser_Out','Laser_Vent'],
+    fault_api: 'dose_drift',
+    steps: [
+      {title:'確認劑量讀值', desc:'查看 HMI 的 Dose sensor 讀值與設定值的差異，\n> 1% 偏差即需介入。', action:'確認偏差量'},
+      {title:'執行劑量校正', desc:'執行 dose calibration，系統自動調整\n雷射電壓補償能量衰減。', action:'執行校正'},
+      {title:'清潔劑量感測器', desc:'雷射出口附近的 dose sensor 玻璃窗\n可能有污染，用 IPA 輕拭後重新校正。', action:'清潔完成'},
+      {title:'確認穩定性', desc:'連續量測 10 次劑量值，\n確認 CV（變異係數）< 0.3%。', action:'確認穩定'},
+    ]
+  },
+  // 焦距漂移（SECOM focus_drift）
+  focus_drift: {
+    title: '焦距異常漂移',
+    subtitle: 'Focus Drift — 鏡片熱效應 / 感測器偏移',
+    triggerMeshes: ['Illum_Barrel','Label_Illum'],
+    fault_api: 'focus_drift',
+    steps: [
+      {title:'確認焦距漂移量', desc:'查看 HMI CDU 面板的 Focus Drift 值，\n> 30 nm 時會顯著影響 CD。', action:'確認漂移量'},
+      {title:'執行 Focus 校正', desc:'使用 ALS（Aerial Latent Scrutiny）測試片\n量測實際最佳焦距，更新補償參數。', action:'執行校正'},
+      {title:'查看鏡片溫升', desc:'在 CDU 面板確認各鏡片元件溫升，\n若 PL1–PL3 溫升 > 1.5 K 表示熱效應顯著。', action:'確認溫升'},
+      {title:'等待熱穩定或調降劑量', desc:'等待鏡片熱平衡（約 15 min），\n或降低 Dose 減緩熱漂移。', action:'確認焦距穩定'},
+    ]
+  }
+};
+
+// ── Maintenance 狀態 ──────────────────────────────────────────────────────────
+var maintOpen=false;
+var _maintFaultType=null;
+var _maintStepIdx=0;     // 目前進行到第幾步（0-based）
+var _maintDone=false;
+
+// 故障狀態快取（由 AI tick 或 SECOM 注入設定）
+var _activeFaults={};    // { faultType: true }
+
+function setActiveFault(faultType){
+  _activeFaults[faultType]=true;
+  // 讓對應 mesh 持續發光提示（橙色 pulse）
+  _maintFaultMeshNames = (MAINT_SOP[faultType]||{}).triggerMeshes || [];
+}
+function clearActiveFault(faultType){
+  if(faultType) delete _activeFaults[faultType];
+  else _activeFaults={};
+  _maintFaultMeshNames=[];
+}
+var _maintFaultMeshNames=[];
+
+function openMaintenance(faultType){
+  var sop=MAINT_SOP[faultType]; if(!sop) return;
+  maintOpen=true; _maintFaultType=faultType; _maintStepIdx=0; _maintDone=false;
+  controls.unlock();
+  document.getElementById('maint-overlay').style.display='flex';
+  document.getElementById('maint-hdr-title').textContent='🔧 '+sop.title;
+  document.getElementById('maint-hdr-sub').textContent=sop.subtitle;
+  document.getElementById('maint-fault-label').textContent='故障類型：'+faultType;
+  document.getElementById('maint-complete').style.display='none';
+  renderMaintSteps(sop, 0);
+}
+window.openMaintenance=openMaintenance;
+
+function renderMaintSteps(sop, currentIdx){
+  var total=sop.steps.length;
+  document.getElementById('maint-prog-bar').style.width=(currentIdx/total*100)+'%';
+  document.getElementById('maint-prog-text').textContent='步驟 '+currentIdx+' / '+total;
+  var html='';
+  sop.steps.forEach(function(step,i){
+    var cls='maint-step';
+    if(i<currentIdx) cls+=' done';
+    else if(i===currentIdx) cls+=' active';
+    else cls+=' locked';
+    var icon = i<currentIdx?'✅':i===currentIdx?'▶':'⬜';
+    html+='<div class="'+cls+'" onclick="maintStepClick('+i+')">';
+    html+='<div class="maint-step-no">'+icon+'</div>';
+    html+='<div class="maint-step-info">';
+    html+='<div class="maint-step-title">Step '+(i+1)+': '+step.title+'</div>';
+    html+='<div class="maint-step-desc">'+step.desc.replace(/\n/g,'<br>')+'</div>';
+    if(i===currentIdx){
+      html+='<div class="maint-step-action"><button class="maint-action-btn" '
+        +'onclick="maintExecStep(event,'+i+')">⚙ '+step.action+'</button></div>';
+    }
+    html+='</div></div>';
+  });
+  document.getElementById('maint-steps').innerHTML=html;
+}
+
+function maintStepClick(i){
+  // 只允許點當前步驟
+  if(i!==_maintStepIdx) return;
+}
+
+function maintExecStep(evt, i){
+  evt.stopPropagation();
+  var sop=MAINT_SOP[_maintFaultType]; if(!sop) return;
+  _maintStepIdx=i+1;
+  if(_maintStepIdx>=sop.steps.length){
+    // 全部完成
+    _maintDone=true;
+    document.getElementById('maint-prog-bar').style.width='100%';
+    document.getElementById('maint-prog-text').textContent='步驟 '+sop.steps.length+' / '+sop.steps.length;
+    document.getElementById('maint-steps').innerHTML='';
+    document.getElementById('maint-complete').style.display='block';
+    // 呼叫 API 清除 SECOM 故障
+    if(sop.fault_api){
+      fetch('/api/fault',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({type:null})});
+    }
+    clearActiveFault(_maintFaultType);
+    addMsg('sys','✅ <b>'+sop.title+'</b> 維修完成，系統恢復正常。');
+    // 2 秒後自動關閉
+    setTimeout(function(){if(maintOpen)closeMaintenance();},2500);
+  } else {
+    renderMaintSteps(sop, _maintStepIdx);
+    addMsg('sys','🔧 維修進度：'+sop.steps[i].title+' — 完成');
+  }
+}
+window.maintExecStep=maintExecStep;
+
+function closeMaintenance(){
+  maintOpen=false;
+  document.getElementById('maint-overlay').style.display='none';
+  if(gameStarted&&insideMode) controls.lock();
+}
+window.closeMaintenance=closeMaintenance;
 
 // ── HMI Screen (canvas texture) ───────────────────────────────────────────────
 var hmiCanvas=null,hmiCtx=null,hmiTex=null,hmiMesh=null;
@@ -585,16 +988,45 @@ function drawHMIScreen(data){
   if(hmiTex)hmiTex.needsUpdate=true;
 }
 
-// ── Load GLB ──────────────────────────────────────────────────────────────────
+// Load GLB
+console.log('[LOAD] GLB loading started');
 var loader=new THREE.GLTFLoader();
+var _t0=Date.now();
+var _hasRealProgress=false;
+function _setProgress(percent){
+  console.log('[_setProgress] Setting to '+percent+'%');
+  var el=document.getElementById('load-pct');
+  var bar=document.getElementById('load-bar');
+  console.log('[_setProgress] Element found: pct='+!!el+', bar='+!!bar);
+  if(el) {
+    el.textContent=percent+'%';
+    console.log('[_setProgress] Updated pct text to '+percent+'%');
+  }
+  if(bar) {
+    bar.style.width=percent+'%';
+    console.log('[_setProgress] Updated bar width to '+percent+'%');
+  }
+}
+console.log('[LOAD] Starting setInterval for progress');
+var _progressInterval=setInterval(function(){
+  if(!_hasRealProgress){
+    var elapsed=Date.now()-_t0;
+    var p=Math.min(95, Math.floor(elapsed/80));
+    _setProgress(p);
+  }
+}, 100);
+_setProgress(0);
+console.log('[LOAD] Initial 0% set, loading glb...');
 loader.load('./asml_duv.glb',
   function(gltf){
     try{
+      document.getElementById('load-pct').textContent='100%';
+      if(document.getElementById('load-bar'))document.getElementById('load-bar').style.width='100%';
       document.getElementById('loading-screen').style.display='none';
       var ss=document.getElementById('start-screen');
       ss.style.display='flex';ss.style.width=CW+'px';ss.style.height=CH+'px';
       var model=gltf.scene;
-      glbModel=model; // 保存供後續切換顯示
+      glbModel=model;
       var _allNodeNames=[];
       model.traverse(function(o){
         if(o.name)_allNodeNames.push(o.name);
@@ -602,7 +1034,7 @@ loader.load('./asml_duv.glb',
       });
       console.log('[DBG] ALL GLB nodes:',_allNodeNames.join(', '));
       scene.add(model);
-      model.visible=false; // 開始前隱藏內部，先看外殼
+      model.visible=false;
       var box=new THREE.Box3().setFromObject(model);
       var c=box.getCenter(new THREE.Vector3()),s=box.getSize(new THREE.Vector3());
       model.position.set(-c.x,-box.min.y,-c.z);
@@ -612,7 +1044,6 @@ loader.load('./asml_duv.glb',
       var r=Math.max(s.x,s.z)*0.85;
       camera.position.set(r,1.6,r);
       camera.lookAt(new THREE.Vector3(0,s.y*0.4,0));
-      // ── 播放 GLB 動畫 ──────────────────────────────────────────
       if(gltf.animations&&gltf.animations.length>0){
         mixer=new THREE.AnimationMixer(model);
         gltf.animations.forEach(function(clip){
@@ -620,39 +1051,32 @@ loader.load('./asml_duv.glb',
           action.setLoop(THREE.LoopRepeat,Infinity);
           action.play();
         });
-        console.log('[OK] Playing',gltf.animations.length,'animations:',
-          gltf.animations.map(function(a){return a.name;}).join(', '));
+        console.log('[OK] Playing',gltf.animations.length,'animations:',gltf.animations.map(function(a){return a.name;}).join(', '));
       }
-      // 建立程序化幾何（光罩載台、機械手臂等）
       createProcObjects(model);
+      clearInterval(_progressInterval);
     }catch(e){
+      clearInterval(_progressInterval);
       var el=document.getElementById('loading-screen');
       if(el)el.innerHTML='<div style="color:#f44;text-align:center;padding:20px;">❌ 模型處理錯誤<br><small style="color:#888">'+e.message+'</small></div>';
       console.error('onLoad error:',e);
     }
   },
   function(xhr){
-    var pEl=document.getElementById('load-pct');
-    var bEl=document.getElementById('load-bar');
-    if(!pEl)return;
-    if(xhr.total&&xhr.total>0){
+    if(xhr.total>0){
+      _hasRealProgress=true;
       var p=Math.round(xhr.loaded/xhr.total*100);
-      pEl.textContent=p+'%'; if(bEl)bEl.style.width=p+'%';
-    } else if(xhr.loaded>0){
-      var kb=Math.round(xhr.loaded/1024);
-      pEl.textContent=kb+' KB';
-      // Fake progress (model ~1.5MB)
-      if(bEl)bEl.style.width=Math.min(90,Math.round(xhr.loaded/15000))+'%';
+      _setProgress(p);
     }
   },
   function(err){
+    document.getElementById('load-pct').textContent='ERROR';
     var el=document.getElementById('loading-screen');
-    if(el)el.innerHTML='<div style="color:#f44;text-align:center;padding:20px;">❌ 模型載入失敗<br><small style="color:#888">'+err+'</small><br><br><button onclick="location.reload()" style="background:#0d2a4a;border:1px solid #4af;color:#4af;padding:8px 20px;border-radius:6px;cursor:pointer;">重新整理</button></div>';
-    console.error('GLB error:',err);
+    if(el)el.innerHTML='<div style="color:#f44;text-align:center;padding:20px;">GLB load failed: '+err+'<br><br><button onclick="location.reload()" style="background:#0d2a4a;border:1px solid #4af;color:#4af;padding:8px 20px;border-radius:6px;cursor:pointer;">Reload</button></div>';
   }
 );
 
-// ── DOM refs ──────────────────────────────────────────────────────────────────
+// DOM refs
 var $hud=document.getElementById('hud');
 var $xhair=document.getElementById('xhair');
 var $prompt=document.getElementById('prompt');
@@ -666,12 +1090,32 @@ var $hmiOverlay=document.getElementById('hmi-overlay');
 var $hmiContent=document.getElementById('hmi-content');
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
+// AI 訊息中的故障關鍵字 → 自動 setActiveFault
+var _FAULT_KEYWORDS={
+  vacuum_abnormal:['真空系統','vacuum','真空壓力','接頭','閥門','洩漏'],
+  cooling_water:['冷卻水','cooling water','流量','水溫','immersion'],
+  lens_hotspot:['鏡片過熱','lens hot','鏡片溫度','熱膨脹'],
+  contamination:['光罩污染','reticle contamination','污染','contamination'],
+  stage_error:['載台誤差','stage error','overlay 超規','overlay超規'],
+  dose_drift:['劑量漂移','dose drift','劑量異常'],
+  focus_drift:['焦距漂移','focus drift','焦距異常'],
+};
+function _detectFaultInText(text){
+  var lower=text.toLowerCase();
+  Object.keys(_FAULT_KEYWORDS).forEach(function(ft){
+    _FAULT_KEYWORDS[ft].forEach(function(kw){
+      if(lower.indexOf(kw.toLowerCase())!==-1) setActiveFault(ft);
+    });
+  });
+}
 function addMsg(role,text){
   var w=$msgs.querySelector('.ms');if(w&&w.textContent.includes('等待'))w.remove();
   var d=document.createElement('div');
   d.className='msg '+(role==='user'?'mu':role==='sys'?'ms':'ma');
-  d.textContent=role==='user'?'你: '+text:role==='sys'?text:'學長: '+text;
+  d.innerHTML=role==='user'?'你: '+text:role==='sys'?text:'學長: '+text;
   $msgs.appendChild(d);$msgs.scrollTop=$msgs.scrollHeight;
+  // AI 或系統訊息中偵測故障關鍵字
+  if(role==='ai'||role==='sys') _detectFaultInText(text);
 }
 function sendChat(txt){
   txt=txt.trim();if(!txt||!gameStarted)return;
@@ -714,19 +1158,224 @@ function closeInspect(){
 }
 
 // ── HMI Overlay ───────────────────────────────────────────────────────────────
+// ── HMI Tab 切換 ──────────────────────────────────────────────────────────
+var _hmiCurrentTab='sensor';
+function switchHmiTab(tab){
+  _hmiCurrentTab=tab;
+  document.querySelectorAll('.hmi-tab').forEach(function(el,i){
+    el.classList.toggle('active', (i===0&&tab==='sensor')||(i===1&&tab==='cdu'));
+  });
+  document.getElementById('hmi-sensor-panel').style.display=(tab==='sensor'?'block':'none');
+  document.getElementById('cdu-panel').style.display=(tab==='cdu'?'flex':'none');
+  if(tab==='cdu') loadWaferHistory();
+}
+window.switchHmiTab=switchHmiTab;
+
 function showHMIOverlay(){
   hmiOpen=true;controls.unlock();
   $hmiOverlay.style.display='flex';
   $hmiOverlay.style.width=CW+'px';$hmiOverlay.style.height='100vh';
-  $hmiContent.innerHTML='<div style="color:#5a8a9a;text-align:center;padding:24px;">載入感測器資料…</div>';
-  fetch('/api/hmi').then(function(r){return r.json();}).then(function(d){renderHMI(d);})
-  .catch(function(){$hmiContent.innerHTML='<div style="color:#f44;padding:20px;">無法取得 HMI 資料</div>';});
+  // 顯示目前 tab
+  document.getElementById('hmi-sensor-panel').style.display=(_hmiCurrentTab==='sensor'?'block':'none');
+  document.getElementById('cdu-panel').style.display=(_hmiCurrentTab==='cdu'?'flex':'none');
+  if(_hmiCurrentTab==='sensor'){
+    $hmiContent.innerHTML='<div style="color:#5a8a9a;text-align:center;padding:24px;">載入感測器資料…</div>';
+    fetch('/api/hmi').then(function(r){return r.json();}).then(function(d){renderHMI(d);})
+    .catch(function(){$hmiContent.innerHTML='<div style="color:#f44;padding:20px;">無法取得 HMI 資料</div>';});
+  } else {
+    loadWaferHistory();
+  }
 }
 function closeHMI(){
   hmiOpen=false;$hmiOverlay.style.display='none';
   if(gameStarted)controls.lock();
 }
 window.closeHMI=closeHMI;
+
+// ── CDU / Overlay 模擬 ─────────────────────────────────────────────────────
+var _cduHistory=[];
+
+function runExposure(){
+  var btn=document.getElementById('cdu-expose-btn');
+  btn.disabled=true; btn.textContent='⏳ 計算中…';
+  var dose=parseFloat(document.getElementById('ctrl-dose').value);
+  var focus=parseFloat(document.getElementById('ctrl-focus').value);
+  var na=parseFloat(document.getElementById('ctrl-na').value);
+  var sigma=parseFloat(document.getElementById('ctrl-sigma').value);
+  fetch('/api/exposure',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({dose:dose,focus:focus,na:na,sigma:sigma})})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    btn.disabled=false; btn.textContent='▶ 曝光模擬';
+    if(d.ok) updateCduDisplay(d.result);
+  }).catch(function(){btn.disabled=false;btn.textContent='▶ 曝光模擬';});
+}
+window.runExposure=runExposure;
+
+function injectFault(type){
+  fetch('/api/fault',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({type:type})})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    var el=document.getElementById('fault-status');
+    if(d.fault) el.textContent='⚠ 故障已注入：'+d.fault.desc+' (健康度 '+(d.health*100).toFixed(0)+'%)';
+    el.style.color='#ffaa44';
+  });
+}
+window.injectFault=injectFault;
+
+function clearFault(){
+  fetch('/api/fault',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({type:null})})
+  .then(function(r){return r.json();})
+  .then(function(){
+    document.getElementById('fault-status').textContent='✓ 製程已恢復正常';
+    document.getElementById('fault-status').style.color='#88ffaa';
+  });
+}
+window.clearFault=clearFault;
+
+function loadWaferHistory(){
+  fetch('/api/wafer_map').then(function(r){return r.json();}).then(function(d){
+    if(d.ok&&d.history&&d.history.length>0){
+      _cduHistory=d.history;
+      var last=d.history[d.history.length-1];
+      updateCduMetrics(last);
+      drawTrendChart(d.history);
+      updateLensTemps(d.lens_state||{});
+    }
+  });
+}
+
+function updateCduDisplay(r){
+  _cduHistory.push(r);
+  updateCduMetrics(r);
+  if(r.cdu_map) drawCduMap(r.cdu_map, r.cd_target);
+  drawTrendChart(_cduHistory.slice(-30));
+  updateLensTemps(r.lens_temps||{});
+}
+
+function updateCduMetrics(r){
+  function setMetric(id,val,warnThresh,alarmThresh){
+    var el=document.getElementById(id); if(!el)return;
+    el.textContent=val;
+    var card=el.closest('.cdu-metric');
+    card.classList.remove('warn','alarm');
+    var v=parseFloat(val);
+    if(!isNaN(alarmThresh)&&Math.abs(v)>=alarmThresh) card.classList.add('alarm');
+    else if(!isNaN(warnThresh)&&Math.abs(v)>=warnThresh) card.classList.add('warn');
+  }
+  setMetric('m-cd', r.cd_mean?r.cd_mean.toFixed(1):'—', 135, 140);
+  setMetric('m-cd3s', r.cd_3sigma?r.cd_3sigma.toFixed(2):'—', 4.0, 6.0);
+  setMetric('m-ovx', r.overlay_x_3s?r.overlay_x_3s.toFixed(2):'—', 2.0, 4.0);
+  setMetric('m-ovy', r.overlay_y_3s?r.overlay_y_3s.toFixed(2):'—', 2.0, 4.0);
+  setMetric('m-fdrift', r.focus_drift?r.focus_drift.toFixed(1):'—', 20, 50);
+  setMetric('m-mag', r.mag_error_ppm?r.mag_error_ppm.toFixed(3):'—', 0.05, 0.1);
+  var h=r.secom&&r.secom.health!=null?r.secom.health:1;
+  var hEl=document.getElementById('m-health');
+  if(hEl){hEl.textContent=(h*100).toFixed(0);
+    var hCard=hEl.closest('.cdu-metric');hCard.classList.remove('warn','alarm');
+    if(h<0.5)hCard.classList.add('alarm'); else if(h<0.75)hCard.classList.add('warn');}
+  var wEl=document.getElementById('m-wno'); if(wEl)wEl.textContent=r.wafer_no||'—';
+}
+
+function drawCduMap(map, target){
+  var cv=document.getElementById('cdu-map-canvas'); if(!cv)return;
+  var ctx=cv.getContext('2d'); var W=cv.width,H=cv.height;
+  var rows=map.length, cols=map[0].length;
+  var cw=W/cols, ch=H/rows;
+  ctx.fillStyle='#030810'; ctx.fillRect(0,0,W,H);
+  var spec=10; // ±10 nm spec
+  for(var i=0;i<rows;i++){
+    for(var j=0;j<cols;j++){
+      var v=map[i][j];
+      if(v===null||v===undefined){continue;}
+      var dev=v-(target||130);
+      var t=Math.max(-1,Math.min(1,dev/spec)); // -1 to +1
+      var r2,g2,b2;
+      if(t<0){r2=0;g2=Math.round(255*(1+t));b2=Math.round(255*(-t));}
+      else{r2=Math.round(255*t);g2=Math.round(255*(1-t));b2=0;}
+      ctx.fillStyle='rgb('+r2+','+g2+','+b2+')';
+      ctx.fillRect(j*cw,i*ch,cw-1,ch-1);
+      if(cw>16){ctx.fillStyle='rgba(0,0,0,.6)';
+        ctx.font='7px Consolas';ctx.textAlign='center';
+        ctx.fillText(v.toFixed(1),(j+.5)*cw,(i+.5)*ch+3);}
+    }
+  }
+  // 色階圖例
+  var lgW=14,lgH=H-20;
+  var lg=ctx.createLinearGradient(W-16,10,W-16,10+lgH);
+  lg.addColorStop(0,'rgb(255,0,0)'); lg.addColorStop(0.5,'rgb(0,255,0)'); lg.addColorStop(1,'rgb(0,0,255)');
+  ctx.fillStyle=lg; ctx.fillRect(W-18,10,lgW,lgH);
+  ctx.fillStyle='#888'; ctx.font='8px Consolas'; ctx.textAlign='right';
+  ctx.fillText('+'+(spec)+'nm',W-20,14); ctx.fillText('0',W-20,10+lgH/2); ctx.fillText('-'+(spec)+'nm',W-20,10+lgH);
+}
+
+function drawTrendChart(history){
+  var cv=document.getElementById('cdu-trend-canvas'); if(!cv||!history||!history.length)return;
+  var ctx=cv.getContext('2d'); var W=cv.width,H=cv.height;
+  ctx.fillStyle='#030810'; ctx.fillRect(0,0,W,H);
+  if(history.length<2)return;
+  var pad={l:40,r:10,t:16,b:28};
+  var cw=W-pad.l-pad.r, ch=H-pad.t-pad.b;
+  // 畫三條線：CD mean, overlay_x_3s, overlay_y_3s
+  var series=[
+    {key:'cd_mean',   color:'#4af', label:'CD(nm)', ymin:120,ymax:145},
+    {key:'overlay_x_3s',color:'#fa4',label:'OvlX 3σ',ymin:0,ymax:5},
+    {key:'overlay_y_3s',color:'#f84',label:'OvlY 3σ',ymin:0,ymax:5},
+  ];
+  // 使用第一條的 Y 軸
+  var ys=series[0];
+  var xStep=cw/(history.length-1);
+  function toX(i){return pad.l+i*xStep;}
+  function toY(v,s){return pad.t+ch-(v-s.ymin)/(s.ymax-s.ymin)*ch;}
+  // 格線
+  ctx.strokeStyle='#0d2a3a';ctx.lineWidth=1;
+  for(var gi=0;gi<=4;gi++){
+    var gy=pad.t+gi*ch/4;
+    ctx.beginPath();ctx.moveTo(pad.l,gy);ctx.lineTo(W-pad.r,gy);ctx.stroke();
+  }
+  // Y 軸標籤
+  ctx.fillStyle='#5a8a9a';ctx.font='9px Consolas';ctx.textAlign='right';
+  for(var gi=0;gi<=4;gi++){
+    var gv=ys.ymax-(ys.ymax-ys.ymin)*gi/4;
+    ctx.fillText(gv.toFixed(0),pad.l-4,pad.t+gi*ch/4+3);
+  }
+  // 畫各系列
+  series.forEach(function(s){
+    ctx.strokeStyle=s.color;ctx.lineWidth=1.5;ctx.beginPath();
+    history.forEach(function(h,i){
+      var v=h[s.key]; if(v==null)return;
+      var x=toX(i), y=toY(v,s);
+      if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+    // 圖例
+    var li=series.indexOf(s);
+    ctx.fillStyle=s.color;ctx.fillRect(pad.l+li*80,2,10,7);
+    ctx.fillStyle='#9ab';ctx.textAlign='left';ctx.font='9px Consolas';
+    ctx.fillText(s.label,pad.l+li*80+13,9);
+  });
+  // X 軸標籤
+  ctx.fillStyle='#5a8a9a';ctx.textAlign='center';ctx.font='9px Consolas';
+  [0,Math.floor(history.length/2),history.length-1].forEach(function(i){
+    if(history[i])ctx.fillText('W'+history[i].wafer_no,toX(i),H-8);
+  });
+}
+
+function updateLensTemps(temps){
+  var el=document.getElementById('lens-temps'); if(!el)return;
+  var names=['IL1','IL2','PL1','PL2','PL3'];
+  var html='';
+  names.forEach(function(n){
+    var t=temps[n]?temps[n].T:0;
+    var col=t<0.5?'#4af':t<1.5?'#fa4':'#f44';
+    html+='<div class="lens-temp-cell"><div class="name">'+n+'</div>'
+      +'<div class="temp" style="color:'+col+'">'+t.toFixed(3)+'</div>'
+      +'<div style="font-size:9px;color:#5a8a9a">K</div></div>';
+  });
+  el.innerHTML=html;
+}
 
 function renderHMI(d){
   if(!d||!d.sensors){$hmiContent.innerHTML='<div style="color:#5a8a9a;padding:20px">尚未開始情境</div>';return;}
@@ -871,6 +1520,7 @@ document.addEventListener('keydown',function(e){
     case 'KeyD':case 'ArrowRight': moveR=true;break;
     case 'KeyE':
       if(hmiOpen){closeHMI();break;}
+      if(maintOpen){closeMaintenance();break;}
       if(inspecting){closeInspect();break;}
       // 外殼模式：按 E
       if(!insideMode&&hoveredObj&&isShellMesh(hoveredObj)){
@@ -879,10 +1529,16 @@ document.addEventListener('keydown',function(e){
         break;
       }
       if(hoveredObj){
+        // 故障維修優先：檢查 hover 的 mesh 是否屬於某個故障的觸發節點
+        var _faultForMesh=null;
+        Object.keys(_activeFaults).forEach(function(ft){
+          var sop=MAINT_SOP[ft];
+          if(sop&&sop.triggerMeshes.indexOf(hoveredObj.name)!==-1) _faultForMesh=ft;
+        });
+        if(_faultForMesh){openMaintenance(_faultForMesh);break;}
         if(hoveredObj.name==='HMI_Screen'){showHMIOverlay();break;}
         var inf=getInfo(hoveredObj);
         if(inf){
-          // 控制系統面板 → 直接開啟 HMI 覆蓋畫面
           if(inf.label==='控制系統'||inf.label==='HMI 控制面板'){showHMIOverlay();}
           else{openInspect(inf.label,inf.action);}
         }
@@ -1013,9 +1669,7 @@ function createProcObjects(model){
   procObjs.chuckW  = chuckW.clone();
   procObjs.pobBotW = pobBotW.clone();
 
-  console.log('[DBG] chuckW:',chuckW.x.toFixed(2),chuckW.y.toFixed(2),chuckW.z.toFixed(2),
-              '  pobTopW:',pobTopW.x.toFixed(2),pobTopW.y.toFixed(2),pobTopW.z.toFixed(2),
-              '  illumW:',illumW.x.toFixed(2),illumW.y.toFixed(2),illumW.z.toFixed(2));
+  console.log('[DBG] chuckW:',chuckW.x.toFixed(2),chuckW.y.toFixed(2),chuckW.z.toFixed(2),'  pobTopW:',pobTopW.x.toFixed(2),pobTopW.y.toFixed(2),pobTopW.z.toFixed(2),'  illumW:',illumW.x.toFixed(2),illumW.y.toFixed(2),illumW.z.toFixed(2));
 
   // ── 光罩載台（Reticle Stage）──────────────────────────────────────────────
   // 放在 POB_Top_Cap 正上方 0.18m
@@ -1159,10 +1813,7 @@ function createProcObjects(model){
       var _lzCtr=new THREE.Vector3(); _lzbb2.getCenter(_lzCtr);
       lzBoxY=_lzCtr.y;
       lzStartX=_lzCtr.x; // 球放在機器視覺中心 X
-      console.log('[DBG] Laser_Box bbox centerX='+lzStartX.toFixed(3)+' centerY='+lzBoxY.toFixed(3)
-        +' centerZ='+_lzCtr.z.toFixed(3)
-        +' minX='+_lzbb2.min.x.toFixed(3)+' maxX='+_lzbb2.max.x.toFixed(3)
-        +' minZ='+_lzbb2.min.z.toFixed(3)+' maxZ='+_lzbb2.max.z.toFixed(3));
+      console.log('[DBG] Laser_Box bbox centerX='+lzStartX.toFixed(3)+' centerY='+lzBoxY.toFixed(3)+' centerZ='+_lzCtr.z.toFixed(3)+' minX='+_lzbb2.min.x.toFixed(3)+' maxX='+_lzbb2.max.x.toFixed(3)+' minZ='+_lzbb2.min.z.toFixed(3)+' maxZ='+_lzbb2.max.z.toFixed(3));
     }
     // 照明桶中心 X（彎折點 & 垂直段位置）
     var _illumCW2=new THREE.Vector3(); _illumBarrelNode2.getWorldPosition(_illumCW2);
@@ -1241,9 +1892,7 @@ function createProcObjects(model){
   // GLB Wafer_Chuck / Wafer 動畫與製程動畫衝突，停止 GLB 動畫交由製程動畫統一管理
   if(mixer){mixer.stopAllAction();mixer=null;}
 
-  console.log('[OK] Proc objects built. efStart:',
-    procObjs.efStart.x.toFixed(2),procObjs.efStart.z.toFixed(2),
-    '→ efEnd:',procObjs.efEnd.x.toFixed(2),procObjs.efEnd.z.toFixed(2));
+  console.log('[OK] Proc objects built. efStart:',procObjs.efStart.x.toFixed(2),procObjs.efStart.z.toFixed(2),'→ efEnd:',procObjs.efEnd.x.toFixed(2),procObjs.efEnd.z.toFixed(2));
 }
 
 // ── 製程順序動畫（32s 循環）──────────────────────────────────────────────────
@@ -1467,9 +2116,17 @@ function animate(){
         if(inf){
           if(!origMats.has(obj))origMats.set(obj,obj.material);
           obj.material=hlMat;hoveredObj=obj;
-          if(!inspecting&&!hmiOpen){
+          if(!inspecting&&!hmiOpen&&!maintOpen){
+            // 故障維修提示優先
+            var _faultPrompt=null;
+            Object.keys(_activeFaults).forEach(function(ft){
+              var sop=MAINT_SOP[ft];
+              if(sop&&sop.triggerMeshes.indexOf(obj.name)!==-1) _faultPrompt=sop.title;
+            });
             var isHMITrigger=(obj.name==='HMI_Screen'||inf.label==='控制系統'||inf.label==='HMI 控制面板');
-            $prompt.textContent=(isHMITrigger?'[E] 開啟 HMI 控制面板（感測器 & ERROR Log）':'[E] 檢查: '+inf.label);
+            $prompt.textContent=_faultPrompt
+              ?'[E] ⚠ 開始維修：'+_faultPrompt
+              :(isHMITrigger?'[E] 開啟 HMI 控制面板（感測器 & ERROR Log）':'[E] 檢查: '+inf.label);
             $prompt.style.left=(CW/2)+'px';$prompt.style.display='block';
             $xhair.classList.add('hit');
           }
