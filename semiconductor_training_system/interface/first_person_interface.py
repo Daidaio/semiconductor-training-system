@@ -2591,7 +2591,12 @@ function animate(){
   // Raycasting
   if(gameStarted){
     raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
-    var hits=raycaster.intersectObjects(allMeshes);
+    var _allHits=raycaster.intersectObjects(allMeshes);
+    // Three.js Mesh.raycast() 不檢查 visible，需手動過濾：
+    // 外殼模式只看外殼 mesh；內部模式排除外殼 mesh
+    var hits=insideMode
+      ? _allHits.filter(function(h){return !isShellMesh(h.object);})
+      : _allHits.filter(function(h){return isShellMesh(h.object);});
     if(hoveredObj){
       if(origMats.has(hoveredObj))hoveredObj.material=origMats.get(hoveredObj);
       hoveredObj=null;
