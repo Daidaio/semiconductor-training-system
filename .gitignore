@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.egg-info/
+venv/
+.venv/
+
+# Claude session memory
+.claude/
+
+# Blender source files
+*.blend
+*.blend1
+
+# Personal documents (not project code)
+*.pptx
+*.pdf
+Star-Attention-main/
+paper/
+
+# Temp / odd files
+=0.18.0
+nul
+_ul
+ASML_DigitalTwin_Final.*
+Untitled.*
+asml_duv_blender.py
+analyze_secom.py
+下載ASML圖片.py
