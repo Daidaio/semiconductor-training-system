@@ -1971,26 +1971,32 @@ controls.addEventListener('unlock',function(){
 document.getElementById('start-btn').addEventListener('click',function(){
   var diff=document.getElementById('difficulty').value;
   document.getElementById('start-btn').textContent='⏳ 載入中…';
+  // 立即設定遊戲場景（同步），讓 controls.lock() 能在 user gesture 內執行
+  gameStarted=true;
+  insideMode=false;
+  if(typeof exteriorShell!=='undefined') exteriorShell.visible=true;
+  if(glbModel) glbModel.visible=false;
+  camera.position.set(_sCX, 1.6, _sCZ+_sD/2+3.0);
+  $hud.style.display='flex';$ctrl.style.display='block';
+  updateHUD();startTick();
+  controls.lock(); // 必須在同步 user-gesture 內呼叫，否則瀏覽器拒絕 Pointer Lock
+  // 非同步取得 AI 訊息（不影響遊戲啟動）
   fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({difficulty:diff})})
   .then(function(r){return r.json();})
   .then(function(d){
-    gameStarted=true;
-    insideMode=false;
-    // 外殼模式：先看機器外觀，走近後按 E 進入內部
-    if(typeof exteriorShell!=='undefined') exteriorShell.visible=true;
-    if(glbModel) glbModel.visible=false;
-    // 攝影機放在機殼正前方約 3m（可自由走動）
-    camera.position.set(_sCX, 1.6, _sCZ+_sD/2+3.0);
     if(d.ai_msg)addMsg('ai',d.ai_msg);
     addMsg('sys','已進入無塵室。靠近機台後按 <b>E</b> 進入機器內部。');
-    $hud.style.display='flex';$ctrl.style.display='block';
-    updateHUD();startTick();controls.lock();
   })
   .catch(function(e){
-    document.getElementById('start-btn').textContent='▶ 開始訓練 — 點此進入';
-    addMsg('sys','⚠ 無法連線: '+e);
+    addMsg('sys','⚠ 連線提示: '+e);
   });
+});
+// 點擊畫布也可重新鎖定指標（例如 ESC 後重新進入）
+renderer.domElement.addEventListener('click',function(){
+  if(gameStarted&&!controls.isLocked&&!hmiOpen&&!maintOpen&&!inspecting){
+    controls.lock();
+  }
 });
 document.getElementById('resume-btn').addEventListener('click',function(){controls.lock();});
 
@@ -2007,11 +2013,18 @@ document.addEventListener('keydown',function(e){
       if(hmiOpen){closeHMI();break;}
       if(maintOpen){closeMaintenance();break;}
       if(inspecting){closeInspect();break;}
-      // 外殼模式：按 E
-      if(!insideMode&&hoveredObj&&isShellMesh(hoveredObj)){
-        if(hoveredObj.name==='ShellHMI_Screen'){showHMIOverlay();}
-        else{enterInterior();}
-        break;
+      // 外殼模式：按 E（hover 到外殼 mesh，或靠近機台 2.5m 內）
+      if(!insideMode){
+        var _camPos=controls.getObject().position;
+        var _distToMachine=Math.sqrt(
+          Math.pow(_camPos.x-_sCX,2)+Math.pow(_camPos.z-(_sCZ+_sD/2),2));
+        if(hoveredObj&&isShellMesh(hoveredObj)){
+          if(hoveredObj.name==='ShellHMI_Screen'){showHMIOverlay();}
+          else{enterInterior();}
+          break;
+        } else if(_distToMachine<2.5){
+          enterInterior();break;
+        }
       }
       if(hoveredObj){
         // 故障維修優先：檢查 hover 的 mesh 是否屬於某個故障的觸發節點
