@@ -1,0 +1,1735 @@
+
+'use strict';
+// Catch any JS error and display on screen
+window.onerror=function(msg,src,line,col,err){
+  var s=document.getElementById('loading-screen');
+  if(s)s.innerHTML='<div style="color:#f44;font-size:13px;max-width:80%;text-align:center;padding:20px;">'
+    +'<b>❌ JavaScript 錯誤</b><br><br>'
+    +'<span style="color:#aaa">'+msg+'</span><br>'
+    +'<span style="color:#666;font-size:11px;">Line '+line+'</span><br><br>'
+    +'<button onclick="location.reload()" style="background:#0d2a4a;border:1px solid #4af;color:#4af;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:12px;">重新整理</button>'
+    +'</div>';
+  return false;
+};
+
+// ── Mesh action / label maps ──────────────────────────────────────────────────
+var MA={
+  Reticle_Stage_Mesh:'查看光罩載台狀態',Reticle_Mesh:'查看光罩載台狀態',
+  Robot_Arm_Link_Mesh:'查看晶圓傳送機械手臂',
+  Stage_Base:'查看晶圓載台位置誤差','Rail_-0.6':'查看晶圓載台位置誤差',
+  'Rail_0.0':'查看晶圓載台位置誤差','Rail_0.6':'查看晶圓載台位置誤差',
+  Wafer_Chuck:'查看晶圓載台位置誤差',Wafer:'查看晶圓載台位置誤差',
+  Label_Stage:'查看晶圓載台位置誤差',
+  POB_Barrel:'檢查投影鏡組溫度',POB_Top_Cap:'檢查投影鏡組溫度',
+  POB_Bottom:'檢查投影鏡組溫度',Label_POB:'檢查投影鏡組溫度',
+  Illum_Barrel:'查看光源強度和穩定性',Label_Illum:'查看光源強度和穩定性',
+  Laser_Box:'查看光源強度和穩定性',Laser_Vent:'查看光源強度和穩定性',
+  Laser_Out:'查看光源強度和穩定性',Label_Laser:'查看光源強度和穩定性',
+  Beam_H1:'查看光源強度和穩定性',Beam_V1:'查看光源強度和穩定性',
+  Beam_H2:'查看光源強度和穩定性',Beam_V2:'查看光源強度和穩定性',
+  Beam_Spot:'查看光源強度和穩定性',Mirror1:'查看光源強度和穩定性',
+  Mirror2:'查看光源強度和穩定性',Mirror3:'查看光源強度和穩定性',
+  Immersion_Hood:'檢查冷卻水流量和溫度',Immersion_Supply:'檢查冷卻水流量和溫度',
+  Immersion_Return:'檢查冷卻水流量和溫度',Label_Immersion:'檢查冷卻水流量和溫度',
+  Duct_Top:'檢查真空系統壓力',Duct_Vent1:'檢查真空系統壓力',Duct_Vent2:'檢查真空系統壓力',
+  Cabinet_Main:'查看控制系統狀態',Cabinet_Panel:'查看控制系統狀態',
+  Screen:'查看控制系統狀態',Keyboard:'查看控制系統狀態',
+  FOUP_Port:'確認晶圓傳送狀態',FOUP_Door:'確認晶圓傳送狀態',Label_FOUP:'確認晶圓傳送狀態',
+  HMI_Screen:'HMI'
+};
+var ML={
+  Reticle_Stage_Mesh:'光罩載台',Reticle_Mesh:'光罩載台',
+  Robot_Arm_Link_Mesh:'晶圓傳送手臂',
+  Stage_Base:'晶圓載台','Rail_-0.6':'晶圓載台','Rail_0.0':'晶圓載台',
+  'Rail_0.6':'晶圓載台',Wafer_Chuck:'晶圓載台',Wafer:'晶圓載台',Label_Stage:'晶圓載台',
+  POB_Barrel:'投影鏡組',POB_Top_Cap:'投影鏡組',POB_Bottom:'投影鏡組',Label_POB:'投影鏡組',
+  Illum_Barrel:'照明系統',Label_Illum:'照明系統',
+  Laser_Box:'雷射光源',Laser_Vent:'雷射光源',Laser_Out:'雷射光源',Label_Laser:'雷射光源',
+  Beam_H1:'DUV光束',Beam_V1:'DUV光束',Beam_H2:'DUV光束',Beam_V2:'DUV光束',Beam_Spot:'DUV光束',
+  Mirror1:'反射鏡',Mirror2:'反射鏡',Mirror3:'反射鏡',
+  Immersion_Hood:'液浸冷卻',Immersion_Supply:'液浸冷卻',
+  Immersion_Return:'液浸冷卻',Label_Immersion:'液浸冷卻',
+  Duct_Top:'通風排氣',Duct_Vent1:'通風排氣',Duct_Vent2:'通風排氣',
+  Cabinet_Main:'控制系統',Cabinet_Panel:'控制系統',Screen:'控制系統',Keyboard:'控制系統',
+  FOUP_Port:'晶圓傳送',FOUP_Door:'晶圓傳送',Label_FOUP:'晶圓傳送',
+  HMI_Screen:'HMI 控制面板'
+};
+var DESC={
+  '光罩載台':'精密光罩（Reticle）定位台，承載石英光罩在掃描曝光時做同步往復移動。光罩移動精度決定圖案縮放比例與CD 均一性。',
+  '晶圓傳送手臂':'SCARA 機械手臂，負責從 FOUP 取出晶圓後精確放置到晶圓載台。終端效應器（End Effector）採用伯努利原理無接觸夾持。',
+  '晶圓載台':'精密定位平台，負責承載並精確移動晶圓。位置精度須達奈米等級，任何震動或溫度變化都會影響對準精度。',
+  '投影鏡組':'核心光學系統，將光罩圖案縮小投影至晶圓。鏡組溫度變化 0.01°C 即可能造成對焦偏移。',
+  '雷射光源':'KrF 準分子雷射（248nm），提供曝光所需深紫外線。能量穩定性直接影響線寬均一性。',
+  '照明系統':'將雷射光整形均勻化，確保光罩面均勻照射。包含多組光學元件和快門。',
+  '液浸冷卻':'液浸水冷系統，維持鏡組底部與晶圓間的超純水層。水溫需控制在 ±0.001°C。',
+  '通風排氣':'維持機台內部氣體潔淨度，排除熱氣和化學氣體。',
+  '控制系統':'即時監控和控制所有子系統的主控電腦，處理數千個感測器數據。',
+  '晶圓傳送':'FOUP 介面和機械手臂，負責晶圓的自動裝卸，維持潔淨度和定位精度。',
+  'DUV光束':'深紫外線（248nm）光束傳輸路徑，需在氮氣環境中傳輸以避免能量衰減。',
+  '反射鏡':'高精度反射鏡，用於光束折轉和準直，鍍膜反射率 >99%。',
+  'HMI 控制面板':'設備主控制面板，顯示所有感測器即時數值、警報狀態及 SECOM 製程異常指標。'
+};
+var QUICK_ACTIONS={
+  '投影鏡組':['檢查投影鏡組溫度','調整投影鏡組溫度補償','記錄鏡組溫度數據'],
+  '晶圓載台':['查看晶圓載台位置誤差','重新校準晶圓載台','檢查載台馬達電流'],
+  '雷射光源':['查看光源強度和穩定性','重設雷射能量校準','檢查雷射氣體壓力'],
+  '液浸冷卻':['檢查冷卻水流量和溫度','清洗液浸水頭','更換過濾器'],
+  '照明系統':['查看光源強度和穩定性','調整照明均勻性','檢查快門功能'],
+  '控制系統':['查看控制系統狀態','重啟控制系統服務','下載診斷日誌'],
+  '晶圓傳送':['確認晶圓傳送狀態','重新對準傳送手臂','檢查 FOUP 鎖定'],
+  '通風排氣':['檢查真空系統壓力','清潔排氣過濾器','查看氣流量'],
+  'DUV光束':['查看光源強度和穩定性','對準光束路徑','檢查光束擋板'],
+  '反射鏡':['查看光源強度和穩定性','清潔反射鏡面','檢查反射率'],
+  '光罩載台':['查看光罩載台狀態','檢查光罩對準精度','更換光罩','查看光罩掃描速度'],
+  '晶圓傳送手臂':['確認晶圓傳送狀態','重新對準傳送手臂','查看手臂馬達電流','檢查 End Effector']
+};
+(function(){
+  for(var i=0;i<10;i++){MA['Lens_'+i]='檢查投影鏡組溫度';ML['Lens_'+i]='投影鏡組';}
+  for(var i=0;i<6;i++){MA['IllumLens_'+i]='查看光源強度和穩定性';ML['IllumLens_'+i]='照明系統';}
+})();
+
+// ── Three.js Setup ────────────────────────────────────────────────────────────
+var CW=window.innerWidth-300, CH=window.innerHeight;
+var scene=new THREE.Scene();
+scene.background=new THREE.Color(0x1a1200); // 無塵室黃光（鈉黃光氛圍）
+scene.fog=new THREE.FogExp2(0x1a1200,0.016);
+var renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(CW,CH); renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+renderer.domElement.style.width=CW+'px';renderer.domElement.style.height=CH+'px';
+var camera=new THREE.PerspectiveCamera(72,CW/CH,0.05,100);
+camera.position.set(0,1.6,4);
+// Lights
+// 無塵室黃光：鈉黃光（589nm）氛圍打光
+scene.add(new THREE.AmbientLight(0xffee88,0.55));          // 黃光環境光
+var sun=new THREE.DirectionalLight(0xffe566,1.1);          // 主光源（暖黃）
+sun.position.set(6,10,6);sun.castShadow=true;scene.add(sun);
+var fill=new THREE.DirectionalLight(0xcc9900,0.45);fill.position.set(-6,3,-6);scene.add(fill); // 補光（橘黃）
+var rim=new THREE.DirectionalLight(0xffdd44,0.20);rim.position.set(0,8,0);scene.add(rim);      // 頂光（黃）
+// 天花板面光（模擬無塵室均勻照明）
+var ceil1=new THREE.PointLight(0xffee66,0.8,8);ceil1.position.set(0,4,0);scene.add(ceil1);
+var ceil2=new THREE.PointLight(0xffdd44,0.5,6);ceil2.position.set(2,4,2);scene.add(ceil2);
+// ── 無塵室環境 ────────────────────────────────────────────────────────────────
+// 地板：淺灰（無塵室抗靜電磁磚）
+var floorMesh=new THREE.Mesh(new THREE.PlaneGeometry(40,40),
+  new THREE.MeshStandardMaterial({color:0xc8c4a0,roughness:.75,metalness:.05}));
+floorMesh.rotation.x=-Math.PI/2;floorMesh.receiveShadow=true;scene.add(floorMesh);
+
+// 地板磚縫格線（30cm x 30cm 磁磚）
+var _tileGrid=new THREE.GridHelper(40,133,0x999980,0x999980);
+_tileGrid.position.y=0.001;_tileGrid.material.opacity=0.25;_tileGrid.material.transparent=true;
+scene.add(_tileGrid);
+
+// 天花板
+var _ceilMesh=new THREE.Mesh(new THREE.PlaneGeometry(40,40),
+  new THREE.MeshStandardMaterial({color:0xf0ead0,roughness:.9,metalness:.0,side:THREE.BackSide}));
+_ceilMesh.rotation.x=-Math.PI/2;_ceilMesh.position.y=5.0;scene.add(_ceilMesh);
+
+// 天花板燈管（黃光日光燈條 × 4）
+var _lampMat=new THREE.MeshStandardMaterial({color:0xffee88,emissive:0xffcc44,emissiveIntensity:1.8,transparent:true,opacity:0.9});
+[[-3,0],[3,0],[-3,3],[3,3]].forEach(function(pos){
+  var _lamp=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.04,2.0),_lampMat);
+  _lamp.position.set(pos[0],4.95,pos[1]);scene.add(_lamp);
+  var _lpt=new THREE.PointLight(0xffee66,0.7,6);_lpt.position.set(pos[0],4.8,pos[1]);scene.add(_lpt);
+});
+
+// 後牆
+var _wallMat=new THREE.MeshStandardMaterial({color:0xe8e0c0,roughness:.85,metalness:.0});
+var _wallBack=new THREE.Mesh(new THREE.PlaneGeometry(40,7),_wallMat);
+_wallBack.position.set(0,3.5,-8);scene.add(_wallBack);
+// 左牆
+var _wallL=new THREE.Mesh(new THREE.PlaneGeometry(20,7),_wallMat.clone());
+_wallL.rotation.y=Math.PI/2;_wallL.position.set(-8,3.5,0);scene.add(_wallL);
+// 右牆
+var _wallR=new THREE.Mesh(new THREE.PlaneGeometry(20,7),_wallMat.clone());
+_wallR.rotation.y=-Math.PI/2;_wallR.position.set(8,3.5,0);scene.add(_wallR);
+
+// ── 機器外殼（ASML NXT 外觀，覆蓋內部元件，開始前可見）─────────────────────
+var exteriorShell=new THREE.Group();
+// 外殼定位（包住現有玻璃箱）
+var _sx=0.85,_sy=0,_sz=-0.05; // 外殼左下角 XZ 基準
+var _sW=2.95,_sH=2.72,_sD=1.85; // 寬高深
+var _sCX=_sx,_sCZ=_sz; // X/Z center
+
+// 上半部：白色機體（掃描頭、光學系統）
+var _uH=_sH*0.55; var _uMat=new THREE.MeshStandardMaterial({color:0xf0eeec,metalness:.12,roughness:.35});
+var _uBox=new THREE.Mesh(new THREE.BoxGeometry(_sW,_uH,_sD),_uMat);
+_uBox.position.set(_sCX,_sH*0.45+_uH/2,_sCZ); exteriorShell.add(_uBox);
+
+// 下半部：深海軍藍底座框架
+var _lH=_sH*0.45; var _lMat=new THREE.MeshStandardMaterial({color:0x2c3a4a,metalness:.35,roughness:.30});
+var _lBox=new THREE.Mesh(new THREE.BoxGeometry(_sW,_lH,_sD),_lMat);
+_lBox.position.set(_sCX,_lH/2,_sCZ); exteriorShell.add(_lBox);
+
+// 頂部深色壓條
+var _topBar=new THREE.Mesh(new THREE.BoxGeometry(_sW+0.02,0.06,_sD+0.02),_lMat.clone());
+_topBar.position.set(_sCX,_sH-0.03,_sCZ); exteriorShell.add(_topBar);
+
+// 正面垂直面板線（右側 4 條）
+var _pMat=new THREE.MeshStandardMaterial({color:0xd8d4d0,metalness:.1,roughness:.45});
+var _frontZ=_sCZ+_sD/2+0.005;
+for(var _pi=0;_pi<4;_pi++){
+  var _pX=_sCX+0.35+_pi*0.42;
+  var _pLine=new THREE.Mesh(new THREE.BoxGeometry(0.025,_sH*0.54,0.012),_pMat);
+  _pLine.position.set(_pX,_sH*0.45+_sH*0.54/2,_frontZ); exteriorShell.add(_pLine);
+}
+
+// 正面：左側控制區（稍微突出的面板）
+var _ctrlMat=new THREE.MeshStandardMaterial({color:0xe8e4e0,metalness:.1,roughness:.4});
+var _ctrlPanel=new THREE.Mesh(new THREE.BoxGeometry(0.7,_sH*0.54,0.015),_ctrlMat);
+_ctrlPanel.position.set(_sCX-0.9,_sH*0.45+_sH*0.54/2,_frontZ); exteriorShell.add(_ctrlPanel);
+
+// 控制面板：HMI 螢幕（深色框，可互動）
+var _hmiFace=new THREE.Mesh(new THREE.BoxGeometry(0.28,0.22,0.01),
+  new THREE.MeshBasicMaterial({color:0x030810}));
+_hmiFace.name='ShellHMI_Screen';
+_hmiFace.position.set(_sCX-0.98,_sH*0.45+_sH*0.54*0.45,_frontZ+0.02); exteriorShell.add(_hmiFace);
+var shellHMIFace=_hmiFace; // 保存參照，供 createHMIScreen 貼 canvas texture
+
+// LED 燈塔（紅/黃/綠）
+var _ledColors=[0x22cc22,0xffaa00,0xee2222];
+_ledColors.forEach(function(c,i){
+  var _led=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.05,8),
+    new THREE.MeshStandardMaterial({color:c,emissive:c,emissiveIntensity:0.8}));
+  _led.position.set(_sCX-0.68,_sH*0.45+_sH*0.54*0.7+i*0.065,_frontZ+0.01); exteriorShell.add(_led);
+});
+
+// ── ASML LOGO（透明背景，放在機殼上半空曠區）─────────────────────────────
+(function(){
+  var _lc=document.createElement('canvas'); _lc.width=512; _lc.height=160;
+  var _lx=_lc.getContext('2d');
+  // 完全透明底
+  _lx.clearRect(0,0,512,160);
+  // "ASML" 深藍字
+  _lx.fillStyle='#002b6e';
+  _lx.font='bold 130px Arial Black,Arial,sans-serif';
+  _lx.textAlign='center'; _lx.textBaseline='middle';
+  _lx.fillText('ASML',256,80);
+  var _lTex=new THREE.CanvasTexture(_lc);
+  var _logoPlate=new THREE.Mesh(
+    new THREE.PlaneGeometry(0.52,0.16),
+    new THREE.MeshBasicMaterial({map:_lTex,transparent:true,side:THREE.FrontSide}));
+  // 放在 HMI 螢幕上方、燈號左邊
+  _logoPlate.position.set(_sCX-1.05,_sH*0.45+_sH*0.54*0.85,_frontZ+0.012);
+  exteriorShell.add(_logoPlate);
+})();
+
+// 底部腳輪/避震腳墊（4 個黑色圓柱）
+var _footMat=new THREE.MeshStandardMaterial({color:0x111111,metalness:.6,roughness:.3});
+[[-1.1,-0.7],[1.1,-0.7],[-1.1,0.6],[1.1,0.6]].forEach(function(p){
+  var _foot=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.1,0.12,8),_footMat);
+  _foot.position.set(_sCX+p[0]*_sW*0.35,0.06,_sCZ+p[1]*_sD*0.4); exteriorShell.add(_foot);
+});
+
+scene.add(exteriorShell);
+
+// 外觀模式攝影機初始位置：正對機殼正面 (-Z 方向)
+// 機殼正面 Z = _sCZ + _sD/2 ≈ 0.875，攝影機在前方 3.5m 處
+// PointerLockControls 預設看向 -Z，所以機殼正好在正前方
+camera.position.set(_sCX, 1.55, _sCZ+_sD/2+3.5);
+
+// ── PointerLockControls ───────────────────────────────────────────────────────
+var controls=new THREE.PointerLockControls(camera,document.body);
+scene.add(controls.getObject());
+var moveF=false,moveB=false,moveL=false,moveR=false;
+var velocity=new THREE.Vector3();
+var clock=new THREE.Clock();
+var gameStarted=false,chatFocus=false,inspecting=false,hmiOpen=false;
+var insideMode=false; // false=外殼模式, true=已進入機器內部
+var glbModel=null;   // GLB 模型根節點
+var shellMeshes=[];  // 外殼 mesh 列表
+
+// ── Raycasting & Model ────────────────────────────────────────────────────────
+var allMeshes=[],hoveredObj=null,origMats=new Map();
+// 收集外殼 mesh 供 raycast 偵測「點擊進入」（必須在 allMeshes/shellMeshes 初始化後）
+if(typeof exteriorShell!=='undefined')
+  exteriorShell.traverse(function(o){if(o.isMesh){shellMeshes.push(o);allMeshes.push(o);}});
+var hlMat=new THREE.MeshStandardMaterial({color:0xffa500,emissive:0x220800,metalness:.3,roughness:.5});
+var raycaster=new THREE.Raycaster();raycaster.far=9;
+var mixer=null; // GLB AnimationMixer
+function getInfo(obj){var o=obj;while(o){if(MA[o.name])return{label:ML[o.name]||o.name,action:MA[o.name]};o=o.parent;}return null;}
+
+// 判斷 mesh 是否屬於外殼
+function isShellMesh(obj){return shellMeshes.indexOf(obj)!==-1;}
+
+// 進入機器內部
+function enterInterior(){
+  insideMode=true;
+  if(typeof exteriorShell!=='undefined') exteriorShell.visible=false;
+  // 個別隱藏 shell meshes，避免 raycaster 仍打到它們（Three.js 只看 mesh 自身 visible）
+  shellMeshes.forEach(function(m){m.visible=false;});
+  if(glbModel) glbModel.visible=true;
+  camera.position.set(0,1.6,4);
+  addMsg('sys','已進入機器內部。靠近部件按 <b>E</b> 檢查，靠近 HMI 螢幕按 <b>E</b> 查看感測器數值。');
+}
+
+// ── Maintenance SOP 資料 ────────────────────────────────────────────────────────
+// 每個故障對應：觸發節點名稱、SOP 步驟、故障描述
+var MAINT_SOP = {
+  // 真空系統異常（AI 對話觸發）
+  vacuum_abnormal: {
+    title: '真空系統異常',
+    subtitle: 'Vacuum System Fault — 接頭洩漏 / 閥門故障',
+    triggerMeshes: ['Duct_Top','Duct_Vent1','Duct_Vent2'],
+    fault_api: null,  // 由 AI 對話觸發，不從 SECOM 注入
+    steps: [
+      {title:'確認系統狀態', desc:'查看 HMI 真空壓力讀值，確認異常壓力範圍。
+正常值：< 1×10⁻³ mbar', action:'確認壓力讀值'},
+      {title:'關閉真空閥門 V-201', desc:'找到排氣管路旁的 V-201 閥門，順時針轉緊關閉，
+防止洩漏範圍擴大。', action:'關閉閥門'},
+      {title:'檢查接頭密封性', desc:'目視檢查管路接頭是否有鬆脫或破損，
+用手輕壓接頭確認固定狀態。', action:'確認接頭緊固'},
+      {title:'更換 O-ring 密封圈', desc:'若接頭密封圈老化，需更換新的 O-ring（型號：AS-568A-116）
+並確認安裝方向正確。', action:'完成更換'},
+      {title:'重新抽真空', desc:'打開泵浦，緩慢開啟 V-201，
+觀察壓力計是否在 5 分鐘內恢復至正常範圍。', action:'開啟抽真空'},
+      {title:'確認壓力恢復', desc:'壓力讀值穩定在 < 1×10⁻³ mbar 且無持續下降趨勢，
+系統恢復正常。', action:'確認完成'},
+    ]
+  },
+  // 冷卻水異常
+  cooling_water: {
+    title: '冷卻水系統異常',
+    subtitle: 'Cooling Water Fault — 流量不足 / 溫度異常',
+    triggerMeshes: ['Immersion_Hood','Immersion_Supply','Immersion_Return'],
+    fault_api: null,
+    steps: [
+      {title:'查看流量計讀值', desc:'HMI 顯示冷卻水流量，正常值：12–15 L/min。
+目前讀值異常，需進一步排查。', action:'確認流量讀值'},
+      {title:'關閉冷卻水進水閥', desc:'找到進水管路上的藍色手動閥，逆時針轉動關閉，
+停止水流以便檢查。', action:'關閉進水閥'},
+      {title:'檢查管路是否洩漏', desc:'目視檢查 Immersion Hood 周圍的管路接頭，
+查看是否有水漬、潮濕痕跡。', action:'確認管路無洩漏'},
+      {title:'清潔過濾器', desc:'拆下進水口過濾器，用清水沖洗後重新裝回，
+過濾器堵塞是流量不足最常見原因。', action:'完成清潔'},
+      {title:'恢復供水並確認流量', desc:'慢慢打開進水閥，觀察流量計是否恢復正常，
+同時確認溫度回到 22±0.1°C。', action:'確認流量正常'},
+    ]
+  },
+  // 鏡片過熱（SECOM lens_hotspot）
+  lens_hotspot: {
+    title: '投影鏡片過熱',
+    subtitle: 'Projection Lens Thermal Anomaly — 需降溫處理',
+    triggerMeshes: ['POB_Barrel','POB_Top_Cap','POB_Bottom'],
+    fault_api: 'lens_hotspot',
+    steps: [
+      {title:'確認鏡片溫度', desc:'在 HMI CDU 面板查看各鏡片元件溫升。
+正常待機溫升應 < 0.5 K，目前超標。', action:'查看溫度數值'},
+      {title:'降低曝光劑量', desc:'立即在 HMI 將 Dose 降低 20%（例如 30→24 mJ/cm²），
+減少熱輸入給鏡片。', action:'已調降 Dose'},
+      {title:'等待自然冷卻', desc:'停止曝光，等待鏡片溫度透過自然對流冷卻。
+依熱時間常數（τ₁≈90s, τ₂≈15min），
+需等待約 5 分鐘。', action:'確認溫度下降中'},
+      {title:'檢查冷卻水流量', desc:'確認鏡筒冷卻水迴路流量是否正常，
+鏡筒周圍溫度感測器讀值應趨近室溫。', action:'確認冷卻正常'},
+      {title:'恢復曝光並監控', desc:'緩慢恢復正常劑量，持續監控 CDU 趨勢圖，
+確認 CD 3σ 回到規格內（< 4 nm）。', action:'確認 CDU 恢復正常'},
+    ]
+  },
+  // 光罩污染（SECOM contamination）
+  contamination: {
+    title: '光罩污染',
+    subtitle: 'Reticle Contamination — 需清潔或更換',
+    triggerMeshes: ['Reticle_Stage_Mesh','Reticle_Mesh'],
+    fault_api: 'contamination',
+    steps: [
+      {title:'確認污染位置', desc:'在 HMI 查看 CDU Map，污染通常表現為
+特定 field 位置的系統性 CD 偏移。', action:'確認異常 field'},
+      {title:'停機並卸載光罩', desc:'通知工程師停止生產，
+按 SOP 將光罩從 reticle stage 取出並放入專用載具。', action:'光罩已卸載'},
+      {title:'目視檢查光罩', desc:'在潔淨燈箱下目視檢查光罩表面，
+尋找顆粒、水漬、或圖案損傷。', action:'確認污染位置'},
+      {title:'光罩清潔（或更換）', desc:'輕微污染：使用 DI water + 氮氣吹淨。
+嚴重污染：送回光罩廠重新清潔或更換。', action:'清潔/更換完成'},
+      {title:'裝回並執行對準', desc:'裝回光罩，執行 reticle alignment，
+確認套刻誤差在規格內後恢復生產。', action:'對準完成'},
+    ]
+  },
+  // 載台位置誤差（SECOM stage_error）
+  stage_error: {
+    title: '晶圓載台位置誤差',
+    subtitle: 'Wafer Stage Position Error — Overlay 超規',
+    triggerMeshes: ['Wafer_Chuck','Stage_Base','Wafer'],
+    fault_api: 'stage_error',
+    steps: [
+      {title:'確認 Overlay 數值', desc:'在 HMI CDU 面板查看 Overlay X/Y 3σ 值，
+超過 4 nm 時需介入。', action:'確認 Overlay 數值'},
+      {title:'執行載台校正', desc:'啟動 stage calibration routine，
+系統自動量測 interferometer 讀值並補償。', action:'執行 Cal Routine'},
+      {title:'檢查氣浮軸承', desc:'確認載台氣浮壓力正常（0.4–0.6 MPa），
+氣壓不足會導致載台摩擦增加。', action:'確認氣浮壓力'},
+      {title:'確認 Overlay 改善', desc:'重新曝光測試片，量測 Overlay，
+確認 X/Y 3σ < 2 nm 後恢復量產。', action:'Overlay 合格'},
+    ]
+  },
+  // 劑量漂移（SECOM dose_drift）
+  dose_drift: {
+    title: '曝光劑量漂移',
+    subtitle: 'Dose Drift — 雷射能量衰減 / 感測器偏移',
+    triggerMeshes: ['Laser_Box','Laser_Out','Laser_Vent'],
+    fault_api: 'dose_drift',
+    steps: [
+      {title:'確認劑量讀值', desc:'查看 HMI 的 Dose sensor 讀值與設定值的差異，
+> 1% 偏差即需介入。', action:'確認偏差量'},
+      {title:'執行劑量校正', desc:'執行 dose calibration，系統自動調整
+雷射電壓補償能量衰減。', action:'執行校正'},
+      {title:'清潔劑量感測器', desc:'雷射出口附近的 dose sensor 玻璃窗
+可能有污染，用 IPA 輕拭後重新校正。', action:'清潔完成'},
+      {title:'確認穩定性', desc:'連續量測 10 次劑量值，
+確認 CV（變異係數）< 0.3%。', action:'確認穩定'},
+    ]
+  },
+  // 焦距漂移（SECOM focus_drift）
+  focus_drift: {
+    title: '焦距異常漂移',
+    subtitle: 'Focus Drift — 鏡片熱效應 / 感測器偏移',
+    triggerMeshes: ['Illum_Barrel','Label_Illum'],
+    fault_api: 'focus_drift',
+    steps: [
+      {title:'確認焦距漂移量', desc:'查看 HMI CDU 面板的 Focus Drift 值，
+> 30 nm 時會顯著影響 CD。', action:'確認漂移量'},
+      {title:'執行 Focus 校正', desc:'使用 ALS（Aerial Latent Scrutiny）測試片
+量測實際最佳焦距，更新補償參數。', action:'執行校正'},
+      {title:'查看鏡片溫升', desc:'在 CDU 面板確認各鏡片元件溫升，
+若 PL1–PL3 溫升 > 1.5 K 表示熱效應顯著。', action:'確認溫升'},
+      {title:'等待熱穩定或調降劑量', desc:'等待鏡片熱平衡（約 15 min），
+或降低 Dose 減緩熱漂移。', action:'確認焦距穩定'},
+    ]
+  }
+};
+
+// ── Maintenance 狀態 ──────────────────────────────────────────────────────────
+var maintOpen=false;
+var _maintFaultType=null;
+var _maintStepIdx=0;     // 目前進行到第幾步（0-based）
+var _maintDone=false;
+
+// 故障狀態快取（由 AI tick 或 SECOM 注入設定）
+var _activeFaults={};    // { faultType: true }
+
+function setActiveFault(faultType){
+  _activeFaults[faultType]=true;
+  // 讓對應 mesh 持續發光提示（橙色 pulse）
+  _maintFaultMeshNames = (MAINT_SOP[faultType]||{}).triggerMeshes || [];
+}
+function clearActiveFault(faultType){
+  if(faultType) delete _activeFaults[faultType];
+  else _activeFaults={};
+  _maintFaultMeshNames=[];
+}
+var _maintFaultMeshNames=[];
+
+function openMaintenance(faultType){
+  var sop=MAINT_SOP[faultType]; if(!sop) return;
+  maintOpen=true; _maintFaultType=faultType; _maintStepIdx=0; _maintDone=false;
+  controls.unlock();
+  document.getElementById('maint-overlay').style.display='flex';
+  document.getElementById('maint-hdr-title').textContent='🔧 '+sop.title;
+  document.getElementById('maint-hdr-sub').textContent=sop.subtitle;
+  document.getElementById('maint-fault-label').textContent='故障類型：'+faultType;
+  document.getElementById('maint-complete').style.display='none';
+  renderMaintSteps(sop, 0);
+}
+window.openMaintenance=openMaintenance;
+
+function renderMaintSteps(sop, currentIdx){
+  var total=sop.steps.length;
+  document.getElementById('maint-prog-bar').style.width=(currentIdx/total*100)+'%';
+  document.getElementById('maint-prog-text').textContent='步驟 '+currentIdx+' / '+total;
+  var html='';
+  sop.steps.forEach(function(step,i){
+    var cls='maint-step';
+    if(i<currentIdx) cls+=' done';
+    else if(i===currentIdx) cls+=' active';
+    else cls+=' locked';
+    var icon = i<currentIdx?'✅':i===currentIdx?'▶':'⬜';
+    html+='<div class="'+cls+'" onclick="maintStepClick('+i+')">';
+    html+='<div class="maint-step-no">'+icon+'</div>';
+    html+='<div class="maint-step-info">';
+    html+='<div class="maint-step-title">Step '+(i+1)+': '+step.title+'</div>';
+    html+='<div class="maint-step-desc">'+step.desc.replace(/
+/g,'<br>')+'</div>';
+    if(i===currentIdx){
+      html+='<div class="maint-step-action"><button class="maint-action-btn" '
+        +'onclick="maintExecStep(event,'+i+')">⚙ '+step.action+'</button></div>';
+    }
+    html+='</div></div>';
+  });
+  document.getElementById('maint-steps').innerHTML=html;
+}
+
+function maintStepClick(i){
+  // 只允許點當前步驟
+  if(i!==_maintStepIdx) return;
+}
+
+function maintExecStep(evt, i){
+  evt.stopPropagation();
+  var sop=MAINT_SOP[_maintFaultType]; if(!sop) return;
+  _maintStepIdx=i+1;
+  if(_maintStepIdx>=sop.steps.length){
+    // 全部完成
+    _maintDone=true;
+    document.getElementById('maint-prog-bar').style.width='100%';
+    document.getElementById('maint-prog-text').textContent='步驟 '+sop.steps.length+' / '+sop.steps.length;
+    document.getElementById('maint-steps').innerHTML='';
+    document.getElementById('maint-complete').style.display='block';
+    // 呼叫 API 清除 SECOM 故障
+    if(sop.fault_api){
+      fetch('/api/fault',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({type:null})});
+    }
+    clearActiveFault(_maintFaultType);
+    addMsg('sys','✅ <b>'+sop.title+'</b> 維修完成，系統恢復正常。');
+    // 2 秒後自動關閉
+    setTimeout(function(){if(maintOpen)closeMaintenance();},2500);
+  } else {
+    renderMaintSteps(sop, _maintStepIdx);
+    addMsg('sys','🔧 維修進度：'+sop.steps[i].title+' — 完成');
+  }
+}
+window.maintExecStep=maintExecStep;
+
+function closeMaintenance(){
+  maintOpen=false;
+  document.getElementById('maint-overlay').style.display='none';
+  if(gameStarted&&insideMode) controls.lock();
+}
+window.closeMaintenance=closeMaintenance;
+
+// ── HMI Screen (canvas texture) ───────────────────────────────────────────────
+var hmiCanvas=null,hmiCtx=null,hmiTex=null,hmiMesh=null;
+
+function createHMIScreen(modelBox){
+  var size=modelBox.getSize(new THREE.Vector3());
+  // Canvas
+  hmiCanvas=document.createElement('canvas');
+  hmiCanvas.width=512;hmiCanvas.height=320;
+  hmiCtx=hmiCanvas.getContext('2d');
+  drawHMIScreen(null);
+  hmiTex=new THREE.CanvasTexture(hmiCanvas);
+  // Plane on left face: x = -size.x/2, facing -X direction (rotate Y = -PI/2)
+  var sw=Math.min(size.z*0.38, 1.2), sh=Math.min(size.y*0.22, 0.75);
+  hmiMesh=new THREE.Mesh(
+    new THREE.PlaneGeometry(sw,sh),
+    new THREE.MeshBasicMaterial({map:hmiTex,side:THREE.FrontSide})
+  );
+  hmiMesh.name='HMI_Screen';
+  hmiMesh.position.set(-size.x/2-0.015, size.y*0.62, 0);
+  hmiMesh.rotation.y=-Math.PI/2;
+  scene.add(hmiMesh);
+  allMeshes.push(hmiMesh);
+  // 把同一個 canvas texture 貼到外殼螢幕
+  if(typeof shellHMIFace!=='undefined'&&shellHMIFace){
+    shellHMIFace.material=new THREE.MeshBasicMaterial({map:hmiTex,side:THREE.FrontSide});
+  }
+}
+
+function drawHMIScreen(data){
+  if(!hmiCtx) return;
+  var W=512,H=320,ctx=hmiCtx;
+  ctx.fillStyle='#030810';ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#1a4a7c';ctx.lineWidth=3;ctx.strokeRect(2,2,W-4,H-4);
+  // Header
+  ctx.fillStyle='#0a1828';ctx.fillRect(0,0,W,46);
+  ctx.strokeStyle='#1a4a7c';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(0,46);ctx.lineTo(W,46);ctx.stroke();
+  ctx.fillStyle='#4af';ctx.font='bold 17px Consolas';ctx.fillText('ASML HMI',14,30);
+  ctx.fillStyle='#5a8a9a';ctx.font='12px Consolas';ctx.fillText('NXT:870  DUV 248nm',140,30);
+  // Status lights
+  var labels=['冷卻','光源','鏡組','載台','對準','光罩','傳送','控制'];
+  var colors=data&&data.sys_colors?data.sys_colors:Array(8).fill('#44cc88');
+  for(var i=0;i<8;i++){
+    var col=i<colors.length?colors[i]:'#44cc88';
+    var x=14+(i%4)*124, y=62+Math.floor(i/4)*60;
+    ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=8;
+    ctx.beginPath();ctx.arc(x+10,y+10,9,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.fillStyle='#8ab';ctx.font='13px Consolas';ctx.fillText(labels[i],x+26,y+15);
+  }
+  // Alarm footer
+  var hasAlarm=data&&data.alarms&&data.alarms.length>0;
+  if(hasAlarm){
+    ctx.fillStyle='rgba(255,68,0,.12)';ctx.fillRect(0,H-54,W,54);
+    ctx.strokeStyle='#ff440040';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(0,H-54);ctx.lineTo(W,H-54);ctx.stroke();
+    ctx.fillStyle='#ff6644';ctx.font='bold 13px Consolas';
+    var txt='⚠  '+data.alarms[0].msg;
+    if(txt.length>44)txt=txt.substring(0,44)+'…';
+    ctx.fillText(txt,14,H-32);
+    ctx.fillStyle='#ffa500';ctx.font='11px Consolas';
+    ctx.fillText('按 E 查看詳細資料',14,H-12);
+  } else if(data){
+    ctx.fillStyle='rgba(68,204,136,.08)';ctx.fillRect(0,H-44,W,44);
+    ctx.fillStyle='#44cc88';ctx.font='13px Consolas';ctx.fillText('✓  系統運行正常',14,H-16);
+    ctx.fillStyle='#5a8a9a';ctx.font='11px Consolas';ctx.fillText('按 E 查看詳細資料',14,H-4);
+  } else {
+    ctx.fillStyle='#2a4a6a';ctx.font='12px Consolas';ctx.fillText('⏳ 等待情境開始…',14,H-18);
+  }
+  if(hmiTex)hmiTex.needsUpdate=true;
+}
+
+// Load GLB
+console.log('[LOAD] GLB loading started');
+var loader=new THREE.GLTFLoader();
+var _t0=Date.now();
+var _hasRealProgress=false;
+function _setProgress(percent){
+  console.log('[_setProgress] Setting to '+percent+'%');
+  var el=document.getElementById('load-pct');
+  var bar=document.getElementById('load-bar');
+  console.log('[_setProgress] Element found: pct='+!!el+', bar='+!!bar);
+  if(el) {
+    el.textContent=percent+'%';
+    console.log('[_setProgress] Updated pct text to '+percent+'%');
+  }
+  if(bar) {
+    bar.style.width=percent+'%';
+    console.log('[_setProgress] Updated bar width to '+percent+'%');
+  }
+}
+console.log('[LOAD] Starting setInterval for progress');
+var _progressInterval=setInterval(function(){
+  if(!_hasRealProgress){
+    var elapsed=Date.now()-_t0;
+    var p=Math.min(95, Math.floor(elapsed/80));
+    _setProgress(p);
+  }
+}, 100);
+_setProgress(0);
+console.log('[LOAD] Initial 0% set, loading glb...');
+loader.load('./asml_duv.glb',
+  function(gltf){
+    try{
+      document.getElementById('load-pct').textContent='100%';
+      if(document.getElementById('load-bar'))document.getElementById('load-bar').style.width='100%';
+      document.getElementById('loading-screen').style.display='none';
+      var ss=document.getElementById('start-screen');
+      ss.style.display='flex';ss.style.width=CW+'px';ss.style.height=CH+'px';
+      var model=gltf.scene;
+      glbModel=model;
+      var _allNodeNames=[];
+      model.traverse(function(o){
+        if(o.name)_allNodeNames.push(o.name);
+        if(o.isMesh){o.castShadow=true;o.receiveShadow=true;allMeshes.push(o);}
+      });
+      console.log('[DBG] ALL GLB nodes:',_allNodeNames.join(', '));
+      scene.add(model);
+      model.visible=false;
+      var box=new THREE.Box3().setFromObject(model);
+      var c=box.getCenter(new THREE.Vector3()),s=box.getSize(new THREE.Vector3());
+      model.position.set(-c.x,-box.min.y,-c.z);
+
+      var worldBox=new THREE.Box3().setFromObject(model);
+      createHMIScreen(worldBox);
+      var r=Math.max(s.x,s.z)*0.85;
+      camera.position.set(r,1.6,r);
+      camera.lookAt(new THREE.Vector3(0,s.y*0.4,0));
+      if(gltf.animations&&gltf.animations.length>0){
+        mixer=new THREE.AnimationMixer(model);
+        gltf.animations.forEach(function(clip){
+          var action=mixer.clipAction(clip);
+          action.setLoop(THREE.LoopRepeat,Infinity);
+          action.play();
+        });
+        console.log('[OK] Playing',gltf.animations.length,'animations:',gltf.animations.map(function(a){return a.name;}).join(', '));
+      }
+      createProcObjects(model);
+      clearInterval(_progressInterval);
+    }catch(e){
+      clearInterval(_progressInterval);
+      var el=document.getElementById('loading-screen');
+      if(el)el.innerHTML='<div style="color:#f44;text-align:center;padding:20px;">❌ 模型處理錯誤<br><small style="color:#888">'+e.message+'</small></div>';
+      console.error('onLoad error:',e);
+    }
+  },
+  function(xhr){
+    if(xhr.total>0){
+      _hasRealProgress=true;
+      var p=Math.round(xhr.loaded/xhr.total*100);
+      _setProgress(p);
+    }
+  },
+  function(err){
+    document.getElementById('load-pct').textContent='ERROR';
+    var el=document.getElementById('loading-screen');
+    if(el)el.innerHTML='<div style="color:#f44;text-align:center;padding:20px;">GLB load failed: '+err+'<br><br><button onclick="location.reload()" style="background:#0d2a4a;border:1px solid #4af;color:#4af;padding:8px 20px;border-radius:6px;cursor:pointer;">Reload</button></div>';
+  }
+);
+
+// DOM refs
+var $hud=document.getElementById('hud');
+var $xhair=document.getElementById('xhair');
+var $prompt=document.getElementById('prompt');
+var $ctrl=document.getElementById('ctrl-bar');
+var $pause=document.getElementById('pause');
+var $ip=document.getElementById('inspect-panel');
+var $msgs=document.getElementById('chat-msgs');
+var $ci=document.getElementById('ci');
+var $cs=document.getElementById('cs');
+var $hmiOverlay=document.getElementById('hmi-overlay');
+var $hmiContent=document.getElementById('hmi-content');
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+// AI 訊息中的故障關鍵字 → 自動 setActiveFault
+var _FAULT_KEYWORDS={
+  vacuum_abnormal:['真空系統','vacuum','真空壓力','接頭','閥門','洩漏'],
+  cooling_water:['冷卻水','cooling water','流量','水溫','immersion'],
+  lens_hotspot:['鏡片過熱','lens hot','鏡片溫度','熱膨脹'],
+  contamination:['光罩污染','reticle contamination','污染','contamination'],
+  stage_error:['載台誤差','stage error','overlay 超規','overlay超規'],
+  dose_drift:['劑量漂移','dose drift','劑量異常'],
+  focus_drift:['焦距漂移','focus drift','焦距異常'],
+};
+function _detectFaultInText(text){
+  var lower=text.toLowerCase();
+  Object.keys(_FAULT_KEYWORDS).forEach(function(ft){
+    _FAULT_KEYWORDS[ft].forEach(function(kw){
+      if(lower.indexOf(kw.toLowerCase())!==-1) setActiveFault(ft);
+    });
+  });
+}
+function addMsg(role,text){
+  var w=$msgs.querySelector('.ms');if(w&&w.textContent.includes('等待'))w.remove();
+  var d=document.createElement('div');
+  d.className='msg '+(role==='user'?'mu':role==='sys'?'ms':'ma');
+  d.innerHTML=role==='user'?'你: '+text:role==='sys'?text:'學長: '+text;
+  $msgs.appendChild(d);$msgs.scrollTop=$msgs.scrollHeight;
+  // AI 或系統訊息中偵測故障關鍵字
+  if(role==='ai'||role==='sys') _detectFaultInText(text);
+}
+function sendChat(txt){
+  txt=txt.trim();if(!txt||!gameStarted)return;
+  addMsg('user',txt);$ci.value='';$cs.disabled=true;
+  fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({text:txt})})
+  .then(function(r){return r.json();})
+  .then(function(d){if(d.ai_msg)addMsg('ai',d.ai_msg);})
+  .catch(function(e){addMsg('sys','⚠ 連線錯誤');})
+  .finally(function(){$cs.disabled=false;});
+}
+$cs.onclick=function(){sendChat($ci.value);};
+$ci.addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat($ci.value);}
+  if(e.key==='Escape'){$ci.blur();chatFocus=false;}
+});
+$ci.addEventListener('focus',function(){chatFocus=true;controls.unlock();});
+$ci.addEventListener('blur',function(){chatFocus=false;});
+
+// ── Inspect Panel ─────────────────────────────────────────────────────────────
+function openInspect(label,action){
+  inspecting=true;controls.unlock();
+  $ip.style.display='flex';
+  document.getElementById('inspect-title').textContent='🔍 '+label;
+  document.getElementById('inspect-desc').textContent=DESC[label]||'請進一步檢查此子系統的運作狀態。';
+  var $ia=document.getElementById('inspect-actions');$ia.innerHTML='';
+  var acts=QUICK_ACTIONS[label]||[action];
+  acts.forEach(function(a){
+    var btn=document.createElement('button');btn.className='qbtn';btn.textContent='▶ '+a;
+    btn.onclick=function(){sendChat(a);closeInspect();};$ia.appendChild(btn);
+  });
+  var ask=document.createElement('button');ask.className='qbtn';
+  ask.textContent='💬 學長，這個部件狀態如何？';
+  ask.onclick=function(){sendChat('學長，'+label+'目前狀態如何？');closeInspect();};
+  $ia.appendChild(ask);
+}
+function closeInspect(){
+  inspecting=false;$ip.style.display='none';
+  if(gameStarted&&!hmiOpen)controls.lock();
+}
+
+// ── HMI Overlay ───────────────────────────────────────────────────────────────
+// ── HMI Tab 切換 ──────────────────────────────────────────────────────────
+var _hmiCurrentTab='sensor';
+function switchHmiTab(tab){
+  _hmiCurrentTab=tab;
+  document.querySelectorAll('.hmi-tab').forEach(function(el,i){
+    el.classList.toggle('active', (i===0&&tab==='sensor')||(i===1&&tab==='cdu'));
+  });
+  document.getElementById('hmi-sensor-panel').style.display=(tab==='sensor'?'block':'none');
+  document.getElementById('cdu-panel').style.display=(tab==='cdu'?'flex':'none');
+  if(tab==='cdu') loadWaferHistory();
+}
+window.switchHmiTab=switchHmiTab;
+
+function showHMIOverlay(){
+  hmiOpen=true;controls.unlock();
+  $hmiOverlay.style.display='flex';
+  $hmiOverlay.style.width=CW+'px';$hmiOverlay.style.height='100vh';
+  // 顯示目前 tab
+  document.getElementById('hmi-sensor-panel').style.display=(_hmiCurrentTab==='sensor'?'block':'none');
+  document.getElementById('cdu-panel').style.display=(_hmiCurrentTab==='cdu'?'flex':'none');
+  if(_hmiCurrentTab==='sensor'){
+    $hmiContent.innerHTML='<div style="color:#5a8a9a;text-align:center;padding:24px;">載入感測器資料…</div>';
+    fetch('/api/hmi').then(function(r){return r.json();}).then(function(d){renderHMI(d);})
+    .catch(function(){$hmiContent.innerHTML='<div style="color:#f44;padding:20px;">無法取得 HMI 資料</div>';});
+  } else {
+    loadWaferHistory();
+  }
+}
+function closeHMI(){
+  hmiOpen=false;$hmiOverlay.style.display='none';
+  if(gameStarted)controls.lock();
+}
+window.closeHMI=closeHMI;
+
+// ── CDU / Overlay 模擬 ─────────────────────────────────────────────────────
+var _cduHistory=[];
+
+function runExposure(){
+  var btn=document.getElementById('cdu-expose-btn');
+  btn.disabled=true; btn.textContent='⏳ 計算中…';
+  var dose=parseFloat(document.getElementById('ctrl-dose').value);
+  var focus=parseFloat(document.getElementById('ctrl-focus').value);
+  var na=parseFloat(document.getElementById('ctrl-na').value);
+  var sigma=parseFloat(document.getElementById('ctrl-sigma').value);
+  fetch('/api/exposure',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({dose:dose,focus:focus,na:na,sigma:sigma})})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    btn.disabled=false; btn.textContent='▶ 曝光模擬';
+    if(d.ok) updateCduDisplay(d.result);
+  }).catch(function(){btn.disabled=false;btn.textContent='▶ 曝光模擬';});
+}
+window.runExposure=runExposure;
+
+function injectFault(type){
+  fetch('/api/fault',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({type:type})})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    var el=document.getElementById('fault-status');
+    if(d.fault) el.textContent='⚠ 故障已注入：'+d.fault.desc+' (健康度 '+(d.health*100).toFixed(0)+'%)';
+    el.style.color='#ffaa44';
+  });
+}
+window.injectFault=injectFault;
+
+function clearFault(){
+  fetch('/api/fault',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({type:null})})
+  .then(function(r){return r.json();})
+  .then(function(){
+    document.getElementById('fault-status').textContent='✓ 製程已恢復正常';
+    document.getElementById('fault-status').style.color='#88ffaa';
+  });
+}
+window.clearFault=clearFault;
+
+function loadWaferHistory(){
+  fetch('/api/wafer_map').then(function(r){return r.json();}).then(function(d){
+    if(d.ok&&d.history&&d.history.length>0){
+      _cduHistory=d.history;
+      var last=d.history[d.history.length-1];
+      updateCduMetrics(last);
+      drawTrendChart(d.history);
+      updateLensTemps(d.lens_state||{});
+    }
+  });
+}
+
+function updateCduDisplay(r){
+  _cduHistory.push(r);
+  updateCduMetrics(r);
+  if(r.cdu_map) drawCduMap(r.cdu_map, r.cd_target);
+  drawTrendChart(_cduHistory.slice(-30));
+  updateLensTemps(r.lens_temps||{});
+}
+
+function updateCduMetrics(r){
+  function setMetric(id,val,warnThresh,alarmThresh){
+    var el=document.getElementById(id); if(!el)return;
+    el.textContent=val;
+    var card=el.closest('.cdu-metric');
+    card.classList.remove('warn','alarm');
+    var v=parseFloat(val);
+    if(!isNaN(alarmThresh)&&Math.abs(v)>=alarmThresh) card.classList.add('alarm');
+    else if(!isNaN(warnThresh)&&Math.abs(v)>=warnThresh) card.classList.add('warn');
+  }
+  setMetric('m-cd', r.cd_mean?r.cd_mean.toFixed(1):'—', 135, 140);
+  setMetric('m-cd3s', r.cd_3sigma?r.cd_3sigma.toFixed(2):'—', 4.0, 6.0);
+  setMetric('m-ovx', r.overlay_x_3s?r.overlay_x_3s.toFixed(2):'—', 2.0, 4.0);
+  setMetric('m-ovy', r.overlay_y_3s?r.overlay_y_3s.toFixed(2):'—', 2.0, 4.0);
+  setMetric('m-fdrift', r.focus_drift?r.focus_drift.toFixed(1):'—', 20, 50);
+  setMetric('m-mag', r.mag_error_ppm?r.mag_error_ppm.toFixed(3):'—', 0.05, 0.1);
+  var h=r.secom&&r.secom.health!=null?r.secom.health:1;
+  var hEl=document.getElementById('m-health');
+  if(hEl){hEl.textContent=(h*100).toFixed(0);
+    var hCard=hEl.closest('.cdu-metric');hCard.classList.remove('warn','alarm');
+    if(h<0.5)hCard.classList.add('alarm'); else if(h<0.75)hCard.classList.add('warn');}
+  var wEl=document.getElementById('m-wno'); if(wEl)wEl.textContent=r.wafer_no||'—';
+}
+
+function drawCduMap(map, target){
+  var cv=document.getElementById('cdu-map-canvas'); if(!cv)return;
+  var ctx=cv.getContext('2d'); var W=cv.width,H=cv.height;
+  var rows=map.length, cols=map[0].length;
+  var cw=W/cols, ch=H/rows;
+  ctx.fillStyle='#030810'; ctx.fillRect(0,0,W,H);
+  var spec=10; // ±10 nm spec
+  for(var i=0;i<rows;i++){
+    for(var j=0;j<cols;j++){
+      var v=map[i][j];
+      if(v===null||v===undefined){continue;}
+      var dev=v-(target||130);
+      var t=Math.max(-1,Math.min(1,dev/spec)); // -1 to +1
+      var r2,g2,b2;
+      if(t<0){r2=0;g2=Math.round(255*(1+t));b2=Math.round(255*(-t));}
+      else{r2=Math.round(255*t);g2=Math.round(255*(1-t));b2=0;}
+      ctx.fillStyle='rgb('+r2+','+g2+','+b2+')';
+      ctx.fillRect(j*cw,i*ch,cw-1,ch-1);
+      if(cw>16){ctx.fillStyle='rgba(0,0,0,.6)';
+        ctx.font='7px Consolas';ctx.textAlign='center';
+        ctx.fillText(v.toFixed(1),(j+.5)*cw,(i+.5)*ch+3);}
+    }
+  }
+  // 色階圖例
+  var lgW=14,lgH=H-20;
+  var lg=ctx.createLinearGradient(W-16,10,W-16,10+lgH);
+  lg.addColorStop(0,'rgb(255,0,0)'); lg.addColorStop(0.5,'rgb(0,255,0)'); lg.addColorStop(1,'rgb(0,0,255)');
+  ctx.fillStyle=lg; ctx.fillRect(W-18,10,lgW,lgH);
+  ctx.fillStyle='#888'; ctx.font='8px Consolas'; ctx.textAlign='right';
+  ctx.fillText('+'+(spec)+'nm',W-20,14); ctx.fillText('0',W-20,10+lgH/2); ctx.fillText('-'+(spec)+'nm',W-20,10+lgH);
+}
+
+function drawTrendChart(history){
+  var cv=document.getElementById('cdu-trend-canvas'); if(!cv||!history||!history.length)return;
+  var ctx=cv.getContext('2d'); var W=cv.width,H=cv.height;
+  ctx.fillStyle='#030810'; ctx.fillRect(0,0,W,H);
+  if(history.length<2)return;
+  var pad={l:40,r:10,t:16,b:28};
+  var cw=W-pad.l-pad.r, ch=H-pad.t-pad.b;
+  // 畫三條線：CD mean, overlay_x_3s, overlay_y_3s
+  var series=[
+    {key:'cd_mean',   color:'#4af', label:'CD(nm)', ymin:120,ymax:145},
+    {key:'overlay_x_3s',color:'#fa4',label:'OvlX 3σ',ymin:0,ymax:5},
+    {key:'overlay_y_3s',color:'#f84',label:'OvlY 3σ',ymin:0,ymax:5},
+  ];
+  // 使用第一條的 Y 軸
+  var ys=series[0];
+  var xStep=cw/(history.length-1);
+  function toX(i){return pad.l+i*xStep;}
+  function toY(v,s){return pad.t+ch-(v-s.ymin)/(s.ymax-s.ymin)*ch;}
+  // 格線
+  ctx.strokeStyle='#0d2a3a';ctx.lineWidth=1;
+  for(var gi=0;gi<=4;gi++){
+    var gy=pad.t+gi*ch/4;
+    ctx.beginPath();ctx.moveTo(pad.l,gy);ctx.lineTo(W-pad.r,gy);ctx.stroke();
+  }
+  // Y 軸標籤
+  ctx.fillStyle='#5a8a9a';ctx.font='9px Consolas';ctx.textAlign='right';
+  for(var gi=0;gi<=4;gi++){
+    var gv=ys.ymax-(ys.ymax-ys.ymin)*gi/4;
+    ctx.fillText(gv.toFixed(0),pad.l-4,pad.t+gi*ch/4+3);
+  }
+  // 畫各系列
+  series.forEach(function(s){
+    ctx.strokeStyle=s.color;ctx.lineWidth=1.5;ctx.beginPath();
+    history.forEach(function(h,i){
+      var v=h[s.key]; if(v==null)return;
+      var x=toX(i), y=toY(v,s);
+      if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+    // 圖例
+    var li=series.indexOf(s);
+    ctx.fillStyle=s.color;ctx.fillRect(pad.l+li*80,2,10,7);
+    ctx.fillStyle='#9ab';ctx.textAlign='left';ctx.font='9px Consolas';
+    ctx.fillText(s.label,pad.l+li*80+13,9);
+  });
+  // X 軸標籤
+  ctx.fillStyle='#5a8a9a';ctx.textAlign='center';ctx.font='9px Consolas';
+  [0,Math.floor(history.length/2),history.length-1].forEach(function(i){
+    if(history[i])ctx.fillText('W'+history[i].wafer_no,toX(i),H-8);
+  });
+}
+
+function updateLensTemps(temps){
+  var el=document.getElementById('lens-temps'); if(!el)return;
+  var names=['IL1','IL2','PL1','PL2','PL3'];
+  var html='';
+  names.forEach(function(n){
+    var t=temps[n]?temps[n].T:0;
+    var col=t<0.5?'#4af':t<1.5?'#fa4':'#f44';
+    html+='<div class="lens-temp-cell"><div class="name">'+n+'</div>'
+      +'<div class="temp" style="color:'+col+'">'+t.toFixed(3)+'</div>'
+      +'<div style="font-size:9px;color:#5a8a9a">K</div></div>';
+  });
+  el.innerHTML=html;
+}
+
+function renderHMI(d){
+  if(!d||!d.sensors){$hmiContent.innerHTML='<div style="color:#5a8a9a;padding:20px">尚未開始情境</div>';return;}
+  var html='';
+  // Scenario info
+  html+='<div class="hmi-section">';
+  html+='<div class="hmi-section-title">📋 情境資訊</div>';
+  html+='<div class="hmi-info-row"><span style="color:#6ab">情境名稱</span><span style="color:#ffa500">'+(d.scenario_name||'N/A')+'</span></div>';
+  html+='<div class="hmi-info-row"><span style="color:#6ab">故障類型</span><span style="color:#cde">'+(d.scenario_type||'N/A')+'</span></div>';
+  html+='</div>';
+  // Alarms
+  var aColor=d.alarms&&d.alarms.length?'#ff6644':'#44cc88';
+  var aTitle=d.alarms&&d.alarms.length?'⚠ 活動警報 ('+d.alarms.length+')':'✅ 無活動警報';
+  html+='<div class="hmi-section"><div class="hmi-section-title" style="color:'+aColor+'">'+aTitle+'</div>';
+  if(d.alarms&&d.alarms.length){
+    d.alarms.forEach(function(a){
+      var col=a.level==='critical'?'#ff4444':'#ffaa00';
+      html+='<div class="hmi-alarm" style="border-color:'+col+'44;background:'+col+'0e">';
+      html+='<span class="alarm-code" style="color:'+col+'">'+a.code+'</span>';
+      html+='<span class="alarm-sys">'+a.system+'</span>';
+      html+='<span class="alarm-msg">'+a.msg+'</span></div>';
+    });
+  } else {
+    html+='<div style="color:#44cc88;font-size:11px;padding:4px 0;">所有子系統運行正常</div>';
+  }
+  html+='</div>';
+  // Sensors
+  html+='<div class="hmi-section"><div class="hmi-section-title">📊 即時感測器數值</div>';
+  (d.sensors||[]).forEach(function(s){
+    var col=s.status==='critical'?'#ff4444':s.status==='warning'?'#ffaa00':'#44cc88';
+    var icon=s.status==='critical'?'🔴':s.status==='warning'?'🟡':'🟢';
+    html+='<div class="hmi-sensor">';
+    html+='<span>'+icon+' '+s.label+'</span>';
+    html+='<span class="sensor-val" style="color:'+col+'">'+s.value+' '+s.unit+'</span>';
+    html+='<span class="sensor-norm">正常: '+s.normal+'</span>';
+    html+='<span class="sensor-dev" style="color:'+col+'">'+(s.dev||'')+'</span>';
+    html+='</div>';
+  });
+  html+='</div>';
+  // SECOM
+  if(d.secom&&d.secom.length){
+    html+='<div class="hmi-section"><div class="hmi-section-title">🔬 SECOM 製程參數異常指標</div>';
+    html+='<div class="secom-grid">';
+    d.secom.forEach(function(f){
+      var col=f.severity==='critical'?'#ff4444':f.severity==='warning'?'#ffaa00':'#44cc88';
+      var sig=(f.sigma>=0?'+':'')+f.sigma+'σ';
+      html+='<div class="secom-feat" style="border-color:'+col+'33">';
+      html+='<div style="color:#5a8a9a;font-size:10px;">'+f.feature+'</div>';
+      html+='<div style="color:'+col+';font-size:14px;font-weight:bold;margin-top:3px;">'+sig+'</div>';
+      html+='</div>';
+    });
+    html+='</div></div>';
+  }
+  // ERROR Log
+  html+='<div class="hmi-section">';
+  html+='<div class="hmi-section-title" style="color:'+(d.alarms&&d.alarms.length?'#ff6644':'#5a8a9a')+'">📋 系統錯誤日誌 (ERROR Log)</div>';
+  if(d.alarms&&d.alarms.length){
+    var now=new Date();
+    d.alarms.forEach(function(a,i){
+      var t=new Date(now.getTime()-i*197000);
+      function z(n){return n.toString().padStart(2,'0');}
+      var ts=z(t.getHours())+':'+z(t.getMinutes())+':'+z(t.getSeconds());
+      var col=a.level==='critical'?'#ff4444':'#ffaa00';
+      html+='<div style="display:flex;gap:10px;padding:5px 8px;border-bottom:1px solid #0d1b2a;font-family:Consolas,monospace;font-size:11px;">';
+      html+='<span style="color:#3a5a7c;min-width:55px;">'+ts+'</span>';
+      html+='<span style="color:'+col+';min-width:65px;font-weight:bold;">['+a.level.toUpperCase()+']</span>';
+      html+='<span style="color:#7ab;min-width:70px;">'+a.code+'</span>';
+      html+='<span style="color:#cde;">'+a.system+'：'+a.msg+'</span>';
+      html+='</div>';
+    });
+    // 新增正常運行紀錄
+    var ok=new Date(now.getTime()-d.alarms.length*210000);
+    function z2(n){return n.toString().padStart(2,'0');}
+    html+='<div style="display:flex;gap:10px;padding:5px 8px;font-family:Consolas,monospace;font-size:11px;">';
+    html+='<span style="color:#3a5a7c;min-width:55px;">'+z2(ok.getHours())+':'+z2(ok.getMinutes())+':'+z2(ok.getSeconds())+'</span>';
+    html+='<span style="color:#44cc88;min-width:65px;font-weight:bold;">[INFO]</span>';
+    html+='<span style="color:#7ab;min-width:70px;">SYS-INIT</span>';
+    html+='<span style="color:#5a8a9a;">系統啟動完成，開始監控。</span>';
+    html+='</div>';
+  } else {
+    html+='<div style="font-family:Consolas,monospace;font-size:11px;padding:8px;">';
+    html+='<span style="color:#3a5a7c;">'+new Date().toLocaleTimeString()+'</span>';
+    html+=' <span style="color:#44cc88;">[INFO]</span>';
+    html+=' <span style="color:#5a8a9a;">SYS-OK — 所有子系統運行正常，無錯誤記錄。</span>';
+    html+='</div>';
+  }
+  html+='</div>';
+  $hmiContent.innerHTML=html;
+  // Update canvas texture
+  drawHMIScreen(d);
+}
+
+// ── Pointer Lock events ───────────────────────────────────────────────────────
+controls.addEventListener('lock',function(){
+  document.getElementById('start-screen').style.display='none';
+  $pause.style.display='none';
+  $xhair.style.display='block';
+  $xhair.style.left=(CW/2-12)+'px';$xhair.style.top='calc(50% - 12px)';
+});
+controls.addEventListener('unlock',function(){
+  if(gameStarted&&!chatFocus&&!inspecting&&!hmiOpen){
+    $pause.style.display='flex';$pause.style.width=CW+'px';$pause.style.height='100vh';
+    $xhair.style.display='none';
+  }
+});
+
+// ── Start button ──────────────────────────────────────────────────────────────
+document.getElementById('start-btn').addEventListener('click',function(){
+  var diff=document.getElementById('difficulty').value;
+  document.getElementById('start-btn').textContent='⏳ 載入中…';
+  fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({difficulty:diff})})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    gameStarted=true;
+    insideMode=false;
+    // 外殼模式：先看機器外觀，走近後按 E 進入內部
+    if(typeof exteriorShell!=='undefined') exteriorShell.visible=true;
+    if(glbModel) glbModel.visible=false;
+    // 攝影機放在機殼正前方約 3m（可自由走動）
+    camera.position.set(_sCX, 1.6, _sCZ+_sD/2+3.0);
+    if(d.ai_msg)addMsg('ai',d.ai_msg);
+    addMsg('sys','已進入無塵室。靠近機台後按 <b>E</b> 進入機器內部。');
+    $hud.style.display='flex';$ctrl.style.display='block';
+    updateHUD();startTick();controls.lock();
+  })
+  .catch(function(e){
+    document.getElementById('start-btn').textContent='▶ 開始訓練 — 點此進入';
+    addMsg('sys','⚠ 無法連線: '+e);
+  });
+});
+document.getElementById('resume-btn').addEventListener('click',function(){controls.lock();});
+
+// ── Keyboard ──────────────────────────────────────────────────────────────────
+document.addEventListener('keydown',function(e){
+  if(chatFocus)return;
+  if(hmiOpen&&e.key==='Escape'){closeHMI();return;}
+  switch(e.code){
+    case 'KeyW':case 'ArrowUp':    moveF=true;break;
+    case 'KeyS':case 'ArrowDown':  moveB=true;break;
+    case 'KeyA':case 'ArrowLeft':  moveL=true;break;
+    case 'KeyD':case 'ArrowRight': moveR=true;break;
+    case 'KeyE':
+      if(hmiOpen){closeHMI();break;}
+      if(maintOpen){closeMaintenance();break;}
+      if(inspecting){closeInspect();break;}
+      // 外殼模式：按 E
+      if(!insideMode&&hoveredObj&&isShellMesh(hoveredObj)){
+        if(hoveredObj.name==='ShellHMI_Screen'){showHMIOverlay();}
+        else{enterInterior();}
+        break;
+      }
+      if(hoveredObj){
+        // 故障維修優先：檢查 hover 的 mesh 是否屬於某個故障的觸發節點
+        var _faultForMesh=null;
+        Object.keys(_activeFaults).forEach(function(ft){
+          var sop=MAINT_SOP[ft];
+          if(sop&&sop.triggerMeshes.indexOf(hoveredObj.name)!==-1) _faultForMesh=ft;
+        });
+        if(_faultForMesh){openMaintenance(_faultForMesh);break;}
+        if(hoveredObj.name==='HMI_Screen'){showHMIOverlay();break;}
+        var inf=getInfo(hoveredObj);
+        if(inf){
+          if(inf.label==='控制系統'||inf.label==='HMI 控制面板'){showHMIOverlay();}
+          else{openInspect(inf.label,inf.action);}
+        }
+      }
+      break;
+    case 'KeyC':$ci.focus();break;
+    case 'KeyR':if(gameStarted&&!controls.isLocked)controls.lock();break;
+  }
+});
+document.addEventListener('keyup',function(e){
+  switch(e.code){
+    case 'KeyW':case 'ArrowUp':    moveF=false;break;
+    case 'KeyS':case 'ArrowDown':  moveB=false;break;
+    case 'KeyA':case 'ArrowLeft':  moveL=false;break;
+    case 'KeyD':case 'ArrowRight': moveR=false;break;
+  }
+});
+
+// ── HUD subsystem lights ──────────────────────────────────────────────────────
+var SYS=[['❄️','冷卻'],['💡','光源'],['🔭','鏡組'],['💿','載台'],
+         ['🎯','對準'],['📐','光罩'],['🦾','傳送'],['🖥','控制']];
+function updateHUD(colors){
+  colors=colors||Array(8).fill('#44cc88');
+  var html='';
+  SYS.forEach(function(s,i){
+    var c=colors[i]||'#44cc88';
+    var cls=c==='#44cc88'?'g':c==='#ffaa00'?'y':'r';
+    html+='<div class="si"><div class="dot '+cls+'"></div>'+s[0]+' '+s[1]+'</div>';
+  });
+  document.getElementById('sys-lights').innerHTML=html;
+}
+
+// ── Auto-tick ─────────────────────────────────────────────────────────────────
+var tickTimer=null;
+function startTick(){
+  if(tickTimer)return;
+  tickTimer=setInterval(function(){
+    if(!gameStarted)return;
+    fetch('/api/tick').then(function(r){return r.json();})
+    .then(function(d){
+      if(d.ok&&d.ai_msg)addMsg('ai',d.ai_msg);
+      // Refresh HMI canvas in background
+      fetch('/api/hmi').then(function(r){return r.json();})
+      .then(function(h){if(h.sys_colors){updateHUD(h.sys_colors);drawHMIScreen(h);}})
+      .catch(function(){});
+    }).catch(function(){});
+  },8000);
+}
+
+// ── Procedural 3D Objects（光罩載台 + 機械手臂）─────────────────────────────
+var procObjs={};
+var sceneMeshMap={};
+var beamPtLight=null;
+var procElapsed=0;
+
+function createProcObjects(model){
+  model.traverse(function(o){if(o.name)sceneMeshMap[o.name]=o;});
+
+  // ── 玻璃外框擴展，容納照明系統與雷射元件（sceneMeshMap 已填充）────────────
+  (function(){
+    // X 擴展：右牆右移，頂/底/後板加寬
+    var wr=sceneMeshMap['Wall_Right']; if(wr) wr.position.x+=0.28;
+    var wl=sceneMeshMap['Wall_Left'];  if(wl) wl.position.x-=0.05;
+    ['Roof','Inner_Floor','Wall_Back'].forEach(function(n){
+      var nd=sceneMeshMap[n]; if(nd) nd.scale.x*=1.16;
+    });
+    // Y 擴展：頂板上移，三面牆拉高（scale.y），底板不動
+    var roof=sceneMeshMap['Roof']; if(roof) roof.position.y+=0.22;
+    ['Wall_Right','Wall_Left','Wall_Back'].forEach(function(n){
+      var nd=sceneMeshMap[n]; if(nd) nd.scale.y*=1.18;
+    });
+    // Duct_Top 是通風管頂蓋（Y=2.38 的寬厚板），卡在照明系統上方，隱藏掉
+    var ductTop=sceneMeshMap['Duct_Top']; if(ductTop) ductTop.visible=false;
+    var dv1=sceneMeshMap['Duct_Vent1']; if(dv1) dv1.visible=false;
+    var dv2=sceneMeshMap['Duct_Vent2']; if(dv2) dv2.visible=false;
+    // 雷射系統移位：Y+0.15m（升高至光點高度）
+    // Z 方向：自動計算讓機器中心 Z 對齊照明桶 Z（往使用者這邊移動）
+    var _illumNode0=sceneMeshMap['Illum_Barrel'];
+    var _illumW0=new THREE.Vector3();
+    if(_illumNode0) _illumNode0.getWorldPosition(_illumW0);
+    var _targetZ=_illumW0.z; // 桶的 Z = 目標機器中心 Z
+    var _lzBox0=sceneMeshMap['Laser_Box']; var _lzZShift=0;
+    if(_lzBox0){
+      var _bb0=new THREE.Box3().setFromObject(_lzBox0);
+      var _ctr0=new THREE.Vector3(); _bb0.getCenter(_ctr0);
+      _lzZShift=_targetZ-_ctr0.z;
+      console.log('[DBG] LaserZ: targetZ='+_targetZ.toFixed(3)+' machCtrZ='+_ctr0.z.toFixed(3)+' zShift='+_lzZShift.toFixed(3));
+    }
+    ['Laser_Box','Laser_Vent','Laser_Out','Label_Laser'].forEach(function(n){
+      var nd=sceneMeshMap[n]; if(nd){ nd.position.y+=0.15; nd.position.z+=_lzZShift; }
+    });
+    scene.updateMatrixWorld(true);
+  })();
+
+  // ── 材質 ──────────────────────────────────────────────────────────────────
+  var metalMat=new THREE.MeshStandardMaterial({color:0x8899aa,metalness:.75,roughness:.25});
+  var darkMetal=new THREE.MeshStandardMaterial({color:0x334455,metalness:.8,roughness:.2});
+  var silicaMat=new THREE.MeshStandardMaterial({color:0x4466cc,metalness:.4,roughness:.1,transparent:true,opacity:.85});
+  var maskMat=new THREE.MeshStandardMaterial({color:0x110022,metalness:.1,roughness:.2,transparent:true,opacity:.9});
+  var markMat=new THREE.MeshStandardMaterial({color:0xcc88ff,emissive:0x440066});
+  var uvMat=new THREE.MeshStandardMaterial({color:0x8800ff,emissive:0x5500cc,transparent:true,opacity:.55});
+  var glowMat=new THREE.MeshStandardMaterial({color:0xaa44ff,emissive:0x7700ff,transparent:true,opacity:.7});
+
+  // ── 取得關鍵 GLB 節點的「世界座標」────────────────────────────────────────
+  // GLB 節點是 model 的子物件，.position 是局部座標；
+  // 必須用 getWorldPosition() 才能取得正確世界座標
+  var pobTop    = sceneMeshMap['POB_Top_Cap'];
+  var pobBot    = sceneMeshMap['POB_Bottom'];
+  var wChuck    = sceneMeshMap['Wafer_Chuck'];
+  var foupPort  = sceneMeshMap['FOUP_Port'];
+  var illumBarrel = sceneMeshMap['Illum_Barrel']; // 照明系統圓柱桶體
+
+  var pobTopW =new THREE.Vector3(); var pobBotW=new THREE.Vector3();
+  var chuckW  =new THREE.Vector3(); var foupW  =new THREE.Vector3();
+  var illumW  =new THREE.Vector3();
+  if(pobTop)    pobTop.getWorldPosition(pobTopW);    else pobTopW.set(0.64,2.19,0.12);
+  if(pobBot)    pobBot.getWorldPosition(pobBotW);    else pobBotW.set(0.64,0.71,0.12);
+  if(wChuck)    wChuck.getWorldPosition(chuckW);     else chuckW.set(0.24,0.62,0.12);
+  if(foupPort)  foupPort.getWorldPosition(foupW);    else foupW.set(-0.93,1.04,0.64);
+  // 照明系統圓柱的世界座標（光束起點）
+  if(illumBarrel) illumBarrel.getWorldPosition(illumW);
+  else illumW.set(pobTopW.x+0.38, pobTopW.y+0.30, pobTopW.z);
+  // X 不能超出牆壁（安全上限）
+  illumW.x = Math.min(illumW.x, pobTopW.x + 0.55);
+  console.log('[DBG] Illum_Barrel found:',!!illumBarrel,' illumW:',illumW.x.toFixed(3),illumW.y.toFixed(3));
+
+  // 儲存動畫用基準位置
+  procObjs.chuckW  = chuckW.clone();
+  procObjs.pobBotW = pobBotW.clone();
+
+  console.log('[DBG] chuckW:',chuckW.x.toFixed(2),chuckW.y.toFixed(2),chuckW.z.toFixed(2),'  pobTopW:',pobTopW.x.toFixed(2),pobTopW.y.toFixed(2),pobTopW.z.toFixed(2),'  illumW:',illumW.x.toFixed(2),illumW.y.toFixed(2),illumW.z.toFixed(2));
+
+  // ── 光罩載台（Reticle Stage）──────────────────────────────────────────────
+  // 放在 POB_Top_Cap 正上方 0.18m
+  var rsCX=pobTopW.x, rsCZ=pobTopW.z, rsY=pobTopW.y+0.18;
+
+  var rs=new THREE.Mesh(new THREE.BoxGeometry(.52,.06,.52),metalMat.clone());
+  rs.name='Reticle_Stage_Mesh';rs.position.set(rsCX,rsY,rsCZ);rs.castShadow=true;
+  scene.add(rs);procObjs.rs=rs;allMeshes.push(rs);
+
+  var rsEdge=new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(.52,.06,.52)),
+    new THREE.LineBasicMaterial({color:0x4488cc}));
+  rsEdge.position.copy(rs.position);scene.add(rsEdge);
+
+  // 光罩（薄方形石英板）
+  var rmBaseY=rsY+0.038;
+  var rm=new THREE.Mesh(new THREE.BoxGeometry(.28,.006,.28),maskMat);
+  rm.name='Reticle_Mesh';rm.position.set(rsCX,rmBaseY,rsCZ);
+  scene.add(rm);procObjs.rm=rm;procObjs.rmBaseY=rmBaseY;allMeshes.push(rm);
+
+  // 光罩圖案標記（十字線）
+  var rm1=new THREE.Mesh(new THREE.BoxGeometry(.26,.007,.015),markMat);
+  rm1.position.set(rsCX,rmBaseY+0.003,rsCZ);scene.add(rm1);
+  var rm2=new THREE.Mesh(new THREE.BoxGeometry(.015,.007,.26),markMat);
+  rm2.position.set(rsCX,rmBaseY+0.003,rsCZ);scene.add(rm2);
+  procObjs.rmMarks=[rm1,rm2];procObjs.rmMarkBaseY=rmBaseY+0.003;
+
+  // 光罩載台支撐柱（4角）
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(d){
+    var col=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,.16,8),darkMetal.clone());
+    col.position.set(rsCX+d[0]*.20,rsY-0.05,rsCZ+d[1]*.20);scene.add(col);
+  });
+  var rail=new THREE.Mesh(new THREE.BoxGeometry(.02,.02,.58),darkMetal.clone());
+  rail.position.set(rsCX,rsY+0.01,rsCZ);scene.add(rail);
+
+  // ── 機械手臂（Robot Arm）──────────────────────────────────────────────────
+  // 底座靠近 FOUP，高度與晶圓夾頭相符
+  var armBX=foupW.x+0.28, armBZ=foupW.z-0.18, armBY=chuckW.y-0.30;
+  // End Effector 移動起點（FOUP 側）→ 終點（Chuck 正上方）
+  procObjs.efStart=new THREE.Vector3(armBX+0.18, chuckW.y+0.05, armBZ+0.05);
+  procObjs.efEnd  =new THREE.Vector3(chuckW.x,   chuckW.y+0.04, chuckW.z);
+
+  var rbBase=new THREE.Mesh(new THREE.CylinderGeometry(.065,.085,.36,12),metalMat.clone());
+  rbBase.position.set(armBX,armBY,armBZ);rbBase.castShadow=true;
+  scene.add(rbBase);procObjs.rbBase=rbBase;
+
+  var rbTurret=new THREE.Mesh(new THREE.CylinderGeometry(.07,.07,.06,12),darkMetal.clone());
+  rbTurret.position.set(armBX,chuckW.y+0.02,armBZ);
+  scene.add(rbTurret);procObjs.rbTurret=rbTurret;
+
+  var rbLink=new THREE.Mesh(new THREE.BoxGeometry(.55,.05,.06),metalMat.clone());
+  rbLink.name='Robot_Arm_Link_Mesh';
+  rbLink.position.set(armBX,chuckW.y+0.04,armBZ);rbLink.castShadow=true;
+  scene.add(rbLink);procObjs.rbLink=rbLink;allMeshes.push(rbLink);
+
+  var rbLink2=new THREE.Mesh(new THREE.BoxGeometry(.35,.04,.06),darkMetal.clone());
+  rbLink2.position.set(armBX+0.35,chuckW.y+0.04,armBZ);
+  scene.add(rbLink2);procObjs.rbLink2=rbLink2;
+
+  var ef1=new THREE.Mesh(new THREE.BoxGeometry(.30,.01,.02),metalMat.clone());
+  ef1.position.set(procObjs.efStart.x,procObjs.efStart.y,procObjs.efStart.z+0.03);
+  scene.add(ef1);procObjs.ef1=ef1;
+  var ef2=new THREE.Mesh(new THREE.BoxGeometry(.30,.01,.02),metalMat.clone());
+  ef2.position.set(procObjs.efStart.x,procObjs.efStart.y,procObjs.efStart.z-0.03);
+  scene.add(ef2);procObjs.ef2=ef2;
+
+  var rbWafer=new THREE.Mesh(new THREE.CylinderGeometry(.148,.148,.008,32),silicaMat.clone());
+  rbWafer.name='Robot_Wafer_Mesh';
+  rbWafer.position.copy(procObjs.efStart);rbWafer.visible=false;
+  scene.add(rbWafer);procObjs.rbWafer=rbWafer;
+
+  // ── UV 光束視覺化 ──────────────────────────────────────────────────────────
+  // ── UV 光束：直接使用 GLB 內建的正確光路幾何體 ───────────────────────────────
+  // GLB 光路：Laser_Out→Beam_H1→Mirror1→Beam_V1（穿照明桶）
+  //          →Mirror2→Beam_H2→Mirror3→Beam_V2（穿投影鏡）→Beam_Spot
+
+  // GLB 光束節點套上半透明粉紅材質（遞迴套用，處理 Group 內的子 Mesh）
+  function applyBeamMat(node, mat){
+    node.visible=true;
+    if(node.isMesh) node.material=mat;
+    node.children.forEach(function(c){applyBeamMat(c,mat);});
+  }
+  ['Beam_H1','Beam_V1','Beam_H2','Beam_V2','Laser_Out'].forEach(function(nm){
+    var n=sceneMeshMap[nm];
+    if(n){
+      var m=uvMat.clone();
+      // H1/V1 由自訂光路取代，永久設 opacity=0（不從 GLB 顯示）
+      m.opacity=(nm==='Beam_H1'||nm==='Beam_V1')?0:0.80;
+      applyBeamMat(n,m);
+      procObjs['glb_'+nm]=n;
+    } else { console.warn('[BEAM] node not found:',nm); }
+    if(n){var _wp=new THREE.Vector3();n.getWorldPosition(_wp);console.log('[DBG] beam',nm,'world=',_wp.x.toFixed(3),_wp.y.toFixed(3),_wp.z.toFixed(3));}
+  });
+  // 折鏡保持原始金屬材質、確保可見
+  ['Mirror1','Mirror2','Mirror3'].forEach(function(nm){
+    var n=sceneMeshMap[nm];
+    if(n){n.visible=true;n.children.forEach(function(c){c.visible=true;});procObjs['glb_'+nm]=n;}
+  });
+  // Beam_Spot：曝光時才顯示
+  var glbSpotNode=sceneMeshMap['Beam_Spot'];
+  if(glbSpotNode){glbSpotNode.visible=false;procObjs.glbSpot=glbSpotNode;}
+
+  // ── 照明桶半透明（讓桶內 Beam_V1 可見）──────────────────────────────────────
+  var illumBarrelNode=sceneMeshMap['Illum_Barrel'];
+  if(illumBarrelNode){
+    illumBarrelNode.traverse(function(c){
+      if(c.isMesh&&c.material){
+        c.material.transparent=true;
+        c.material.opacity=0.35;
+        c.material.depthWrite=false;
+      }
+    });
+  }
+
+  // IllumLens 鏡片：浮空且令人困惑，隱藏以保持視覺乾淨
+  ['IllumLens_0','IllumLens_1','IllumLens_2',
+   'IllumLens_3','IllumLens_4','IllumLens_5'].forEach(function(nm){
+    var n=sceneMeshMap[nm]; if(n) n.visible=false;
+  });
+
+  // 相容性 stub（動畫程式仍引用的舊欄位，設空值避免 null 錯誤）
+  procObjs.laserToIllum=null;procObjs.illuBeam=null;
+  procObjs.illumToLens=null;procObjs.lensRiser=null;procObjs.hBeam=null;
+  procObjs.lzConnect=null; procObjs.lzDeliver=null;
+  procObjs.lzBarrelFill=null; procObjs.lzEntry=null; procObjs.lzBarrelThrough=null;
+
+  // ── 雷射→照明系統 L形單彎示意光路 ──────────────────────────────────────────
+  // 路徑：雷射箱左側面(lzGlow) → 水平射出(lzEntry) → 彎折球(lzBend) → 垂直穿越桶身(lzBarrelThrough)
+  var lzOutNode=sceneMeshMap['Laser_Out'];
+  var lzBoxNode=sceneMeshMap['Laser_Box'];
+  var _illumBarrelNode2=sceneMeshMap['Illum_Barrel'];
+  var _beamH2Node=sceneMeshMap['Beam_H2'];
+  procObjs.lzBend=null;
+  if(lzOutNode && _illumBarrelNode2){
+    var lzOutW=new THREE.Vector3(); lzOutNode.getWorldPosition(lzOutW);
+    // 雷射箱高度 & 光束水平起點
+    var lzBoxY=0.85; var lzStartX=lzOutW.x;
+    if(lzBoxNode){
+      // 用 BoundingBox 取機器的視覺中心（X, Y）— GLB 原點位置不固定，bbox 中心最可靠
+      var _lzbb2=new THREE.Box3().setFromObject(lzBoxNode);
+      var _lzCtr=new THREE.Vector3(); _lzbb2.getCenter(_lzCtr);
+      lzBoxY=_lzCtr.y;
+      lzStartX=_lzCtr.x; // 球放在機器視覺中心 X
+      console.log('[DBG] Laser_Box bbox centerX='+lzStartX.toFixed(3)+' centerY='+lzBoxY.toFixed(3)+' centerZ='+_lzCtr.z.toFixed(3)+' minX='+_lzbb2.min.x.toFixed(3)+' maxX='+_lzbb2.max.x.toFixed(3)+' minZ='+_lzbb2.min.z.toFixed(3)+' maxZ='+_lzbb2.max.z.toFixed(3));
+    }
+    // 照明桶中心 X（彎折點 & 垂直段位置）
+    var _illumCW2=new THREE.Vector3(); _illumBarrelNode2.getWorldPosition(_illumCW2);
+    var barrelCX=_illumCW2.x; var barrelCZ=_illumCW2.z; // 用桶本身的 Z（固定不動），不用 Laser_Out Z（會隨機器移動而偏移）
+    // 垂直段頂點：Beam_H2 出口（桶頂出口接投影系統）
+    var barrelExitY=_illumCW2.y+0.3;
+    if(_beamH2Node){var _h2W=new THREE.Vector3();_beamH2Node.getWorldPosition(_h2W);barrelExitY=_h2W.y;}
+    console.log('[DBG] lzBoxY='+lzBoxY.toFixed(3)+' lzStartX='+lzStartX.toFixed(3)+' barrelCX='+barrelCX.toFixed(3)+' barrelExitY='+barrelExitY.toFixed(3));
+
+    // ① 發光球：已移除，但保留材質供彎折球使用
+    var lzGlowMat=new THREE.MeshStandardMaterial({
+      color:0xff44ff,emissive:0xcc00cc,emissiveIntensity:3.0,transparent:true,opacity:0.95});
+    procObjs.lzGlow=null;
+
+    // ② 水平段：雷射箱左側面 → 照明桶中心 X（在 lzBoxY 高度水平飛行）
+    var _hDist=Math.abs(lzStartX-barrelCX);
+    if(_hDist>0.02){
+      var _hMidX=(lzStartX+barrelCX)/2;
+      var lzHorizMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.016,_hDist,8),uvMat.clone());
+      lzHorizMesh.rotation.z=Math.PI/2;
+      lzHorizMesh.position.set(_hMidX, lzBoxY, barrelCZ);
+      lzHorizMesh.visible=false;
+      scene.add(lzHorizMesh); procObjs.lzEntry=lzHorizMesh;
+      console.log('[OK] lzHoriz x='+lzStartX.toFixed(3)+'~'+barrelCX.toFixed(3)+' y='+lzBoxY.toFixed(3));
+    }
+
+    // ③ 彎折球：在彎折點放一個小球，視覺上標示 90° 轉向
+    var lzBendMesh=new THREE.Mesh(new THREE.SphereGeometry(0.025,10,10),lzGlowMat.clone());
+    lzBendMesh.position.set(barrelCX, lzBoxY, barrelCZ);
+    lzBendMesh.visible=false;
+    scene.add(lzBendMesh); procObjs.lzBend=lzBendMesh;
+
+    // ④ 垂直段：彎折點(barrelCX, lzBoxY) → 照明桶頂出口(barrelCX, barrelExitY)
+    //    從彎折點一路垂直穿過照明桶底部到頂部
+    var _vLen=barrelExitY-lzBoxY-0.02;
+    if(_vLen>0.05){
+      var lzRiseAllMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.016,_vLen,8),uvMat.clone());
+      lzRiseAllMesh.position.set(barrelCX, lzBoxY+_vLen/2, barrelCZ);
+      lzRiseAllMesh.visible=false;
+      scene.add(lzRiseAllMesh); procObjs.lzBarrelThrough=lzRiseAllMesh;
+      console.log('[OK] lzRiseAll x='+barrelCX.toFixed(3)+' y='+lzBoxY.toFixed(3)+'~'+barrelExitY.toFixed(3));
+    }
+  }
+
+  // ── 掃描曝光光束（細線，跟隨 chuck 位置動畫） ────────────────────────────────
+  var beamTop = Math.max(rsY+0.10, illumW.y+0.05, chuckW.y+1.0);
+  var beamBot = chuckW.y;
+  var beamH   = Math.max(beamTop-beamBot, 0.1);
+  var beamMidY= (beamTop+beamBot)/2;
+  var beamCyl=new THREE.Mesh(new THREE.CylinderGeometry(.012,.005,beamH,8),uvMat.clone());
+  beamCyl.position.set(rsCX,beamMidY,rsCZ);beamCyl.visible=false; // 由 GLB Beam_V2 負責，此自訂桶永久隱藏
+  scene.add(beamCyl);procObjs.beamCyl=beamCyl;
+  procObjs.beamMidY=beamMidY;procObjs.beamTop=beamTop;
+  procObjs.rsCX=rsCX;procObjs.rsCZ=rsCZ;
+
+  // 光罩光暈
+  var reticlGlow=new THREE.Mesh(new THREE.CircleGeometry(.14,32),glowMat.clone());
+  reticlGlow.rotation.x=-Math.PI/2;
+  reticlGlow.position.set(rsCX,rmBaseY-0.002,rsCZ);reticlGlow.visible=false;
+  scene.add(reticlGlow);procObjs.reticleGlow=reticlGlow;
+
+  // 晶圓曝光光暈
+  var beamSpot=new THREE.Mesh(new THREE.CircleGeometry(.04,32),glowMat.clone());
+  beamSpot.rotation.x=-Math.PI/2;
+  beamSpot.position.set(rsCX,chuckW.y+0.002,rsCZ);beamSpot.visible=false;
+  scene.add(beamSpot);procObjs.beamSpotGlow=beamSpot;
+
+  // 點光源
+  var laserPtLight=new THREE.PointLight(0x9900ff,0.3,0.8);
+  laserPtLight.position.copy(illumW);scene.add(laserPtLight);
+  procObjs.laserPtLight=laserPtLight;procObjs.laserGlow=null;
+
+  beamPtLight=new THREE.PointLight(0x9900ff,0,1.4);
+  beamPtLight.position.set(rsCX,chuckW.y+0.06,rsCZ);scene.add(beamPtLight);
+
+  // GLB Wafer_Chuck / Wafer 動畫與製程動畫衝突，停止 GLB 動畫交由製程動畫統一管理
+  if(mixer){mixer.stopAllAction();mixer=null;}
+
+  console.log('[OK] Proc objects built. efStart:',procObjs.efStart.x.toFixed(2),procObjs.efStart.z.toFixed(2),'→ efEnd:',procObjs.efEnd.x.toFixed(2),procObjs.efEnd.z.toFixed(2));
+}
+
+// ── 製程順序動畫（32s 循環）──────────────────────────────────────────────────
+// 時序：FOUP開→手臂取片→傳到載台→對準曝光→手臂取片→FOUP關
+var PROC_T=32;
+
+function _eio(t){return t<.5?2*t*t:(4-2*t)*t-1;}  // ease-in-out
+function _c01(t){return Math.max(0,Math.min(1,t));}
+function _ph(t,s,e){return _eio(_c01((t-s)/(e-s)));}  // phase 0→1 with ease
+
+function updateProcessAnim(dt){
+  if(!procObjs.rs||!gameStarted)return;
+  procElapsed=(procElapsed+dt)%PROC_T;
+  var t=procElapsed;
+
+  var foupDoor=sceneMeshMap['FOUP_Door'];
+  var wChuck  =sceneMeshMap['Wafer_Chuck'];
+  var wWafer  =sceneMeshMap['Wafer'];
+  var eS=procObjs.efStart, eE=procObjs.efEnd;
+
+  // ── 0~2s / 25~27s: FOUP 門開關（GLB 局部 Y 座標）────────────────────────
+  if(foupDoor){
+    var fp=_ph(t,0,2)-_ph(t,25,27);
+    foupDoor.position.y=0.82+fp*0.35;
+  }
+
+  // ── 機械手臂（世界座標插值）────────────────────────────────────────────
+  var extP=_ph(t,2,5.5), retP=_ph(t,19.5,23);
+  var netExt=_c01(extP-retP);
+  // End Effector 從 efStart 插值到 efEnd（均為世界座標）
+  var efX=eS.x+netExt*(eE.x-eS.x);
+  var efY=eE.y;
+  var efZ=eS.z+netExt*(eE.z-eS.z);
+
+  if(procObjs.rbLink){
+    procObjs.rbLink.position.x=eS.x-0.08+netExt*(eE.x-eS.x+0.08);
+    procObjs.rbLink.position.z=eS.z+netExt*(eE.z-eS.z)*0.4;
+    procObjs.rbLink.scale.x=1+netExt*0.9;
+  }
+  if(procObjs.rbLink2){
+    procObjs.rbLink2.position.x=eS.x+0.18+netExt*(eE.x-eS.x-0.05);
+    procObjs.rbLink2.position.z=eS.z+netExt*(eE.z-eS.z)*0.7;
+    procObjs.rbLink2.scale.x=1+netExt*0.7;
+  }
+  if(procObjs.rbTurret){
+    procObjs.rbTurret.position.x=eS.x+netExt*(eE.x-eS.x)*0.25;
+    procObjs.rbTurret.position.z=eS.z+netExt*(eE.z-eS.z)*0.25;
+  }
+  if(procObjs.ef1)procObjs.ef1.position.set(efX,efY,efZ+0.03);
+  if(procObjs.ef2)procObjs.ef2.position.set(efX,efY,efZ-0.03);
+
+  // ── 手臂上的晶圓（3.5~8.5s 傳送中；19.5~23.5s 取回）──────────────────
+  var rwShow=(t>=3.5&&t<8.5)||(t>=19.5&&t<23.5);
+  if(procObjs.rbWafer){
+    procObjs.rbWafer.visible=rwShow;
+    if(rwShow)procObjs.rbWafer.position.set(efX,efY+0.005,efZ);
+  }
+
+  // ── 晶圓載台移動（GLB 局部座標）──────────────────────────────────────────
+  // 鏡組（POB_Bottom）局部座標約 [0.10, *, -0.10]
+  // 裝載位置 [-0.30, 0.00]；掃描中心應在鏡組正下方 [0.10, -0.10]
+  var LENS_LX=0.10, LENS_LZ=-0.10; // 鏡組正下方局部座標
+  var LOAD_LX=-0.30,LOAD_LZ=0.00;  // 裝載/卸載位置局部座標
+
+  // 8.5~9.5s: 晶圓從裝載位置移到鏡組下方（定位）
+  var posP=_ph(t,8.5,9.5);
+  // 9.5~19s: 在鏡組下方做步進掃描
+  var scanning=(t>=9.5&&t<19);
+  // 19~20s: 掃描結束，移回裝載位置（給機械手臂取片）
+  var retLoadP=_ph(t,19,20);
+
+  if(wChuck&&wWafer){
+    var lx,lz;
+    if(t>=8.5&&t<9.5){
+      // 定位：從裝載位置平滑移到鏡組下方
+      lx=LOAD_LX+posP*(LENS_LX-LOAD_LX);
+      lz=LOAD_LZ+posP*(LENS_LZ-LOAD_LZ);
+    } else if(scanning){
+      // 步進掃描：以鏡組為中心做 XZ 蛇行掃描
+      var sp=_c01((t-9.5)/9.5);
+      lx=LENS_LX+0.09*Math.sin(sp*Math.PI*7)*Math.cos(sp*Math.PI*0.5);
+      lz=LENS_LZ+0.07*Math.cos(sp*Math.PI*5)*Math.sin(sp*Math.PI*0.7);
+    } else if(t>=19&&t<20){
+      // 回到裝載位置
+      lx=LENS_LX+retLoadP*(LOAD_LX-LENS_LX);
+      lz=LENS_LZ+retLoadP*(LOAD_LZ-LENS_LZ);
+    } else {
+      lx=LOAD_LX; lz=LOAD_LZ;
+    }
+    wChuck.position.x=lx; wWafer.position.x=lx;
+    wChuck.position.z=lz; wWafer.position.z=lz;
+  }
+
+  // ── UV 光束：只在雷射開啟期間顯示（t>=9 chuck 就位後；t>=10 曝光）──────────
+  var laserOn=(t>=9&&t<19.5);   // 雷射開啟窗口
+  var exposing=(t>=10&&t<19);    // 曝光中（快速脈衝）
+
+  // 全部光束節點：非 laserOn 期間完全隱藏
+  // H1/V1 永久 opacity=0（已由自訂路徑取代），只動畫化 H2/V2/Laser_Out
+  var _GLB_BEAMS=['glb_Beam_H2','glb_Beam_V2','glb_Laser_Out'];
+  if(!laserOn){
+    if(procObjs.beamCyl)procObjs.beamCyl.visible=false;
+    if(procObjs.lzGlow){procObjs.lzGlow.visible=false;}
+    if(procObjs.lzRise){procObjs.lzRise.visible=false;}
+    if(procObjs.lzEntry){procObjs.lzEntry.visible=false;}
+    if(procObjs.lzBend){procObjs.lzBend.visible=false;}
+    if(procObjs.lzBarrelThrough){procObjs.lzBarrelThrough.visible=false;}
+    _GLB_BEAMS.forEach(function(k){
+      if(procObjs[k])procObjs[k].traverse(function(c){if(c.isMesh&&c.material)c.material.opacity=0;});
+    });
+    if(procObjs.glbSpot)procObjs.glbSpot.visible=false;
+    if(procObjs.reticleGlow)procObjs.reticleGlow.visible=false;
+    if(procObjs.beamSpotGlow)procObjs.beamSpotGlow.visible=false;
+    if(beamPtLight)beamPtLight.intensity=0;
+    if(procObjs.laserPtLight)procObjs.laserPtLight.intensity=0;
+  }
+
+  // 光罩光暈 & 晶圓光暈：只在曝光時顯示
+  if(procObjs.reticleGlow)procObjs.reticleGlow.visible=exposing;
+  if(procObjs.beamSpotGlow)procObjs.beamSpotGlow.visible=exposing;
+
+  var breathe=0.5+0.5*Math.sin(procElapsed*Math.PI*0.6);
+
+  if(beamPtLight){
+    if(wChuck){
+      var cwp=new THREE.Vector3();
+      wChuck.getWorldPosition(cwp);
+      if(exposing){
+        // 曝光：快速脈衝，高亮
+        var pulse=0.5+0.5*Math.sin(t*Math.PI*12);
+        beamPtLight.intensity=pulse*2.0;
+        var _op=0.55+pulse*0.40;
+        if(procObjs.lzGlow){procObjs.lzGlow.visible=true;procObjs.lzGlow.material.opacity=0.7+pulse*0.3;}
+        if(procObjs.lzRise){procObjs.lzRise.visible=true;procObjs.lzRise.material.opacity=_op;}
+        if(procObjs.lzEntry){procObjs.lzEntry.visible=true;procObjs.lzEntry.material.opacity=_op;}
+        if(procObjs.lzBend){procObjs.lzBend.visible=true;procObjs.lzBend.material.opacity=0.8+pulse*0.2;}
+        if(procObjs.lzBarrelThrough){procObjs.lzBarrelThrough.visible=true;procObjs.lzBarrelThrough.material.opacity=_op;}
+        _GLB_BEAMS.forEach(function(k){
+          if(procObjs[k])procObjs[k].traverse(function(c){if(c.isMesh&&c.material)c.material.opacity=_op;});
+        });
+        if(procObjs.glbSpot)procObjs.glbSpot.visible=true;
+        if(procObjs.laserPtLight)procObjs.laserPtLight.intensity=0.5+pulse*1.2;
+        if(procObjs.reticleGlow){
+          procObjs.reticleGlow.material.opacity=0.3+pulse*0.4;
+          procObjs.reticleGlow.position.x=cwp.x;
+          procObjs.reticleGlow.position.z=cwp.z;
+        }
+        if(procObjs.beamSpotGlow){
+          procObjs.beamSpotGlow.material.opacity=0.4+pulse*0.5;
+          procObjs.beamSpotGlow.position.x=cwp.x;
+          procObjs.beamSpotGlow.position.z=cwp.z;
+        }
+        beamPtLight.position.x=cwp.x;beamPtLight.position.z=cwp.z;
+      } else if(laserOn){
+        // 雷射預熱（t=9~10）：低強度穩定光
+        var warmOp=0.25+breathe*0.10;
+        beamPtLight.intensity=breathe*0.3;
+        if(procObjs.lzGlow){procObjs.lzGlow.visible=true;procObjs.lzGlow.material.opacity=warmOp;}
+        if(procObjs.lzRise){procObjs.lzRise.visible=true;procObjs.lzRise.material.opacity=warmOp;}
+        if(procObjs.lzEntry){procObjs.lzEntry.visible=true;procObjs.lzEntry.material.opacity=warmOp;}
+        if(procObjs.lzBend){procObjs.lzBend.visible=true;procObjs.lzBend.material.opacity=warmOp;}
+        if(procObjs.lzBarrelThrough){procObjs.lzBarrelThrough.visible=true;procObjs.lzBarrelThrough.material.opacity=warmOp;}
+        _GLB_BEAMS.forEach(function(k){
+          if(procObjs[k])procObjs[k].traverse(function(c){if(c.isMesh&&c.material)c.material.opacity=warmOp;});
+        });
+        if(procObjs.laserPtLight)procObjs.laserPtLight.intensity=breathe*0.3;
+      } else {
+        // 不在 laserOn 範圍：由上方統一設 opacity=0，此處僅保持點光源為 0
+        beamPtLight.intensity=0;
+      }
+    } else {beamPtLight.intensity=0;}
+  }
+
+  // ── 10~19s: 光罩掃描（世界座標 Y 軸小幅往復）────────────────────────────
+  if(procObjs.rm&&procObjs.rmMarks){
+    var rmY=exposing?
+      procObjs.rmBaseY+0.012*Math.sin(t*Math.PI*3.5):procObjs.rmBaseY;
+    procObjs.rm.position.y=rmY;
+    procObjs.rmMarks.forEach(function(m){m.position.y=rmY+0.003;});
+  }
+}
+
+// ── Render loop ───────────────────────────────────────────────────────────────
+function animate(){
+  requestAnimationFrame(animate);
+  var dt=clock.getDelta();
+  if(mixer)mixer.update(dt); // GLB animations
+  updateProcessAnim(dt);     // 製程順序動畫
+  // Movement
+  if(controls.isLocked&&gameStarted){
+    velocity.x-=velocity.x*9*dt;velocity.z-=velocity.z*9*dt;
+    var sp=5.5;
+    if(moveF)velocity.z-=sp*dt;if(moveB)velocity.z+=sp*dt;
+    if(moveL)velocity.x-=sp*dt;if(moveR)velocity.x+=sp*dt;
+    controls.moveRight(velocity.x*dt);controls.moveForward(-velocity.z*dt);
+    camera.position.y=1.6;
+  }
+  // Raycasting
+  if(gameStarted){
+    raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
+    var hits=raycaster.intersectObjects(allMeshes);
+    if(hoveredObj){
+      if(origMats.has(hoveredObj))hoveredObj.material=origMats.get(hoveredObj);
+      hoveredObj=null;
+      if(!inspecting&&!hmiOpen){$prompt.style.display='none';$xhair.classList.remove('hit');}
+    }
+    if(hits.length>0){
+      var obj=hits[0].object;
+      // 外殼模式：hover 外殼
+      if(!insideMode&&isShellMesh(obj)){
+        if(!origMats.has(obj))origMats.set(obj,obj.material);
+        obj.material=hlMat;hoveredObj=obj;
+        if(!inspecting&&!hmiOpen){
+          $prompt.textContent=(obj.name==='ShellHMI_Screen'
+            ?'[E] 開啟 HMI 控制面板':'[E] 進入機器內部');
+          $prompt.style.left=(CW/2)+'px';$prompt.style.display='block';
+          $xhair.classList.add('hit');
+        }
+      } else {
+        var inf=getInfo(obj);
+        if(inf){
+          if(!origMats.has(obj))origMats.set(obj,obj.material);
+          obj.material=hlMat;hoveredObj=obj;
+          if(!inspecting&&!hmiOpen&&!maintOpen){
+            // 故障維修提示優先
+            var _faultPrompt=null;
+            Object.keys(_activeFaults).forEach(function(ft){
+              var sop=MAINT_SOP[ft];
+              if(sop&&sop.triggerMeshes.indexOf(obj.name)!==-1) _faultPrompt=sop.title;
+            });
+            var isHMITrigger=(obj.name==='HMI_Screen'||inf.label==='控制系統'||inf.label==='HMI 控制面板');
+            $prompt.textContent=_faultPrompt
+              ?'[E] ⚠ 開始維修：'+_faultPrompt
+              :(isHMITrigger?'[E] 開啟 HMI 控制面板（感測器 & ERROR Log）':'[E] 檢查: '+inf.label);
+            $prompt.style.left=(CW/2)+'px';$prompt.style.display='block';
+            $xhair.classList.add('hit');
+          }
+        }
+      }
+    }
+  }
+  renderer.render(scene,camera);
+}
+animate();
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize',function(){
+  CW=window.innerWidth-300;CH=window.innerHeight;
+  camera.aspect=CW/CH;camera.updateProjectionMatrix();
+  renderer.setSize(CW,CH);
+  renderer.domElement.style.width=CW+'px';renderer.domElement.style.height=CH+'px';
+  var ss=document.getElementById('start-screen');
+  if(ss.style.display!=='none'){ss.style.width=CW+'px';ss.style.height=CH+'px';}
+  if($pause.style.display!=='none'){$pause.style.width=CW+'px';}
+  if($hmiOverlay.style.display!=='none'){$hmiOverlay.style.width=CW+'px';}
+  $xhair.style.left=(CW/2-12)+'px';$prompt.style.left=(CW/2)+'px';
+});
