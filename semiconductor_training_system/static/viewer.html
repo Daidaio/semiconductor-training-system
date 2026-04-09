@@ -1380,10 +1380,11 @@ function _setQAMode(on){
     $modeBanner.className = 'qa';
     $modeBanner.innerHTML = '💬 <span>問答模式</span> — 請先回答學長的問題，再繼續操作';
     _setOpMode(false);
-    // 立即停止移動，避免 QA 模式下還在滑行
+    // 立即停止移動 + 解除滑鼠鎖定，避免 QA 模式下還能移動或轉視角
     moveF=false;moveB=false;moveL=false;moveR=false;
     velocity.set(0,0,0);
-    setTimeout(function(){ document.getElementById('ci').focus(); }, 150);
+    controls.unlock();  // 解除 PointerLock，QA 模式中不轉視角
+    setTimeout(function(){ document.getElementById('ci').focus(); }, 50);
   } else {
     $qaOverlay.classList.remove('active');
     $chatPanel.classList.remove('qa-mode');
@@ -1504,6 +1505,7 @@ function sendAction(component,action){
   _showThinking();
   // 暫停 tick，避免 LLM 等待期間 tick 塞入重複訊息
   var savedTick = tickTimer;
+  var _actionAllDone = false;  // 故障排除完成後不重啟 tick
   if(tickTimer){clearInterval(tickTimer);tickTimer=null;}
   var faultType=Object.keys(_activeFaults)[0]||null;
   fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -1524,6 +1526,8 @@ function sendAction(component,action){
       if(d.feedback)addMsg('ai',d.feedback);
       if(d.score!==undefined)updateScore(d.score);
       if(d.all_done){
+        _actionAllDone = true;  // 阻止 finally 重啟 tick
+        if(tickTimer){clearInterval(tickTimer);tickTimer=null;}  // 確保 tick 停止
         clearActiveFault(faultType);
         if(maintOpen)closeMaintenance();
         document.getElementById('hint-btn').disabled=true;
@@ -1543,8 +1547,8 @@ function sendAction(component,action){
     }
   }).catch(function(){_hideThinking();addMsg('sys','⚠ 連線錯誤');})
   .finally(function(){
-    // 恢復 tick
-    if(savedTick && !tickTimer) startTick();
+    // 恢復 tick（故障排除完成後不重啟，避免繼續觸發告警訊息）
+    if(savedTick && !tickTimer && !_actionAllDone) startTick();
   });
 }
 function askHint(){
