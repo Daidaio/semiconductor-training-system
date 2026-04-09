@@ -129,6 +129,39 @@ canvas{position:fixed;top:0;left:0;display:block;}
 #hint-btn:hover{border-color:#ffa060;background:rgba(80,40,5,.9);}
 #hint-btn:disabled{opacity:.4;cursor:not-allowed;}
 
+/* ── 訓練結束 結果 Modal ── */
+#result-modal{position:fixed;inset:0;z-index:950;display:none;
+  align-items:center;justify-content:center;
+  background:rgba(0,4,14,.82);backdrop-filter:blur(6px);}
+#result-modal.show{display:flex;}
+#result-box{background:linear-gradient(160deg,#040e22,#071828);
+  border:2px solid #1a4a7c;border-radius:18px;padding:36px 44px;
+  width:480px;max-width:92vw;box-shadow:0 0 60px rgba(30,100,200,.35);
+  display:flex;flex-direction:column;align-items:center;gap:18px;}
+#result-title{font-size:18px;letter-spacing:3px;color:#ffe066;text-align:center;}
+#result-fault{font-size:12px;color:#8ab;letter-spacing:1px;}
+#result-grade-wrap{display:flex;align-items:center;gap:24px;}
+#result-grade{font-size:72px;font-weight:900;line-height:1;
+  font-family:"Arial Black","Arial",sans-serif;
+  text-shadow:0 0 30px currentColor;}
+#result-score-wrap{display:flex;flex-direction:column;align-items:flex-start;gap:4px;}
+#result-score{font-size:36px;font-weight:bold;color:#4fc;font-family:Consolas,monospace;}
+#result-score-lbl{font-size:10px;color:#5a8a9a;letter-spacing:1px;}
+#result-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;width:100%;}
+.rs-card{background:rgba(10,24,40,.8);border:1px solid #1a3a5c;border-radius:10px;
+  padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:4px;}
+.rs-val{font-size:22px;font-weight:bold;color:#4af;font-family:Consolas,monospace;}
+.rs-lbl{font-size:10px;color:#5a8a9a;letter-spacing:.5px;text-align:center;}
+#result-mode{font-size:10px;color:#7aaa7a;letter-spacing:.5px;}
+#result-comment{font-size:12px;color:#aac;line-height:1.8;text-align:center;
+  background:rgba(10,24,40,.6);border-left:3px solid #ffa500;
+  border-radius:4px;padding:10px 14px;width:100%;}
+#result-restart{background:linear-gradient(135deg,#332200,#664400);
+  border:2px solid #ffaa00;color:#ffdd55;padding:12px 44px;border-radius:8px;
+  font:14px Consolas,monospace;cursor:pointer;letter-spacing:2px;
+  transition:.2s;margin-top:4px;}
+#result-restart:hover{box-shadow:0 0 24px rgba(255,180,0,.5);color:#fff;}
+
 /* ── Controls Bar ── */
 #ctrl-bar{position:fixed;bottom:8px;display:none;transform:translateX(-50%);
   background:rgba(0,6,18,.75);border:1px solid #1a3a5c;border-radius:6px;
@@ -470,6 +503,29 @@ canvas{position:fixed;top:0;left:0;display:block;}
   <div style="font-size:11px;color:#6ab;">點擊 3D 畫面或按 R 繼續</div>
   <button class="pbtn" id="resume-btn">▶ 繼續訓練</button>
   <button class="pbtn" onclick="location.reload()">↺ 重新開始</button>
+</div>
+
+<!-- 訓練結束 結果 Modal -->
+<div id="result-modal">
+  <div id="result-box">
+    <div id="result-title">🎓 訓練完成報告</div>
+    <div id="result-fault">情境：—</div>
+    <div id="result-grade-wrap">
+      <div id="result-grade">—</div>
+      <div id="result-score-wrap">
+        <div id="result-score">0</div>
+        <div id="result-score-lbl">最終分數 / 100</div>
+      </div>
+    </div>
+    <div id="result-stats">
+      <div class="rs-card"><div class="rs-val" id="rs-steps">—</div><div class="rs-lbl">完成步驟</div></div>
+      <div class="rs-card"><div class="rs-val" id="rs-hints">—</div><div class="rs-lbl">求助次數</div></div>
+      <div class="rs-card"><div class="rs-val" id="rs-mistakes">—</div><div class="rs-lbl">錯誤步驟</div></div>
+    </div>
+    <div id="result-mode">教學模式：—</div>
+    <div id="result-comment">—</div>
+    <button id="result-restart" onclick="location.reload()">↺ 重新開始訓練</button>
+  </div>
 </div>
 
 <!-- HMI Overlay -->
@@ -1397,6 +1453,8 @@ function sendChat(txt){
       $cs.disabled=true;
       document.getElementById('hint-btn').disabled=true;
       addMsg('sys','🎓 訓練結束。可重新整理頁面開始新情境。');
+      // 延遲 1.5 秒後顯示結果 Modal
+      setTimeout(_showResultModal, 1500);
     }
   })
   .catch(function(e){addMsg('sys','⚠ 連線錯誤');})
@@ -1513,6 +1571,36 @@ function updateScore(score){
   var el=document.getElementById('score-val');
   el.textContent='分數：'+score;
   el.style.color=score>=80?'#4fc':score>=60?'#ffa500':'#f44';
+}
+
+// ── 訓練結束結果 Modal ─────────────────────────────────────────────────────────
+function _showResultModal(){
+  fetch('/api/summary').then(function(r){return r.json();}).then(function(d){
+    if(!d.ok) return;
+    document.getElementById('result-fault').textContent = '情境：' + (d.fault_name || '—');
+    var $grade = document.getElementById('result-grade');
+    $grade.textContent = d.grade;
+    $grade.style.color = d.grade_color;
+    document.getElementById('result-score').textContent = d.score;
+    document.getElementById('result-score').style.color = d.grade_color;
+    document.getElementById('rs-steps').textContent    = d.total_steps + ' 步';
+    document.getElementById('rs-hints').textContent    = d.hint_count + ' 次';
+    document.getElementById('rs-mistakes').textContent = d.mistake_count + ' 次';
+    document.getElementById('result-mode').textContent = '教學模式：' + (d.adaptive_mode || '—');
+    document.getElementById('result-comment').textContent = d.comment;
+    document.getElementById('result-modal').classList.add('show');
+  }).catch(function(){
+    // 若後端資料不足，仍顯示簡單版（使用前端已知分數）
+    var scoreEl = document.getElementById('score-val');
+    var score = parseInt((scoreEl.textContent||'').replace(/[^\d]/g,''))||0;
+    var grade = score>=90?'S':score>=80?'A':score>=70?'B':score>=60?'C':'D';
+    var gradeColor = score>=90?'#00eeff':score>=80?'#44ff88':score>=70?'#aadd00':score>=60?'#ffaa00':'#ff4444';
+    var $grade = document.getElementById('result-grade');
+    $grade.textContent = grade; $grade.style.color = gradeColor;
+    document.getElementById('result-score').textContent = score;
+    document.getElementById('result-score').style.color = gradeColor;
+    document.getElementById('result-modal').classList.add('show');
+  });
 }
 
 // ── HMI Overlay ───────────────────────────────────────────────────────────────

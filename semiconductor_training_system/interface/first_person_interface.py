@@ -57,6 +57,7 @@ except Exception:
 
 _action_session: "ActionSession | None" = None
 _action_session_lock = threading.Lock()
+_session_summary: dict = {}   # 故障排除結束後保存統計，供 /api/summary 回傳
 
 _server_port: int = 0
 
@@ -313,6 +314,7 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
             elif self.path == "/api/tick":          self._api_tick()
             elif self.path == "/api/hmi":           self._api_hmi()
             elif self.path == "/api/qa_pending":    self._api_qa_pending()
+            elif self.path == "/api/summary":       self._api_summary()
             elif self.path == "/api/wafer_map":     self._api_wafer_map()
             elif self.path == "/api/process_window": self._api_process_window()
             elif self.path == "/api/secom_summary":  self._api_secom_summary()
@@ -418,6 +420,63 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
                         "secom": [], "sys_colors": []})
         else:
             self._json(_hmi_cache)
+
+    def _api_summary(self):
+        """GET /api/summary — 回傳本次訓練統計（故障排除完成後才有資料）"""
+        _FAULT_NAMES = {
+            'stage_error':   '載台對準誤差',
+            'contamination': '光學系統污染',
+            'lens_hotspot':  '鏡片熱點過熱',
+            'dose_drift':    '曝光劑量漂移',
+            'focus_drift':   '焦距漂移',
+        }
+        s = _session_summary
+        fault_type  = s.get('fault_type', '')
+        score       = s.get('score', 0)
+        hint_count  = s.get('hint_count', 0)
+        mistake_count = s.get('mistake_count', 0)
+        total_steps = s.get('total_steps', 0)
+        adaptive    = s.get('adaptive_mode', 'standard')
+
+        # 等級
+        if score >= 90:   grade, grade_color = 'S', '#00eeff'
+        elif score >= 80: grade, grade_color = 'A', '#44ff88'
+        elif score >= 70: grade, grade_color = 'B', '#aadd00'
+        elif score >= 60: grade, grade_color = 'C', '#ffaa00'
+        else:             grade, grade_color = 'D', '#ff4444'
+
+        # 評語
+        if score >= 90 and hint_count == 0:
+            comment = '表現卓越！獨立完成所有步驟，且零求助，充分展現紮實的製程知識。'
+        elif score >= 80:
+            comment = '表現優秀！對故障排除流程掌握良好，僅有少量失誤。繼續保持！'
+        elif score >= 70:
+            comment = '表現良好，基本流程正確。建議複習相關 SOP，減少錯誤步驟。'
+        elif score >= 60:
+            comment = '表現尚可，已完成訓練目標。建議多練習，熟悉各故障的排查優先順序。'
+        else:
+            comment = '需要加強。建議重新閱讀 SOP 手冊並再次練習，加深對故障排除流程的理解。'
+
+        _MODE_NAMES = {
+            'challenge': '挑戰模式（系統判定你理解優秀）',
+            'standard':  '標準模式',
+            'scaffolding': '輔助模式（系統給予更多提示）',
+            'remedial':  '補救模式（系統提供完整引導）',
+        }
+
+        self._json({
+            "ok": True,
+            "fault_name":   _FAULT_NAMES.get(fault_type, fault_type),
+            "fault_type":   fault_type,
+            "score":        score,
+            "grade":        grade,
+            "grade_color":  grade_color,
+            "hint_count":   hint_count,
+            "mistake_count": mistake_count,
+            "total_steps":  total_steps,
+            "adaptive_mode": _MODE_NAMES.get(adaptive, adaptive),
+            "comment":      comment,
+        })
 
     def _api_start(self):
         data = self._read_json()
@@ -663,6 +722,16 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
                         'fault_type': ft,
                     }
                 result["closing_question"] = closing_q
+                # 儲存統計供 /api/summary 使用
+                _session_summary.clear()
+                _session_summary.update({
+                    'fault_type':    ft,
+                    'score':         current_score,
+                    'hint_count':    _action_session.hint_count    if _action_session else 0,
+                    'mistake_count': _action_session.mistake_count if _action_session else 0,
+                    'total_steps':   _action_session.total_steps   if _action_session else 0,
+                    'adaptive_mode': _action_session.adaptive_mode if _action_session else 'standard',
+                })
                 _action_session = None
 
         # proactive_mentor Socratic 追問屬對話式，不遮擋操作
