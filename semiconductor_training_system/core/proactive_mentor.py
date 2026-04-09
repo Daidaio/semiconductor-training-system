@@ -466,17 +466,18 @@ class ProactiveMentor:
 
         # 優先用 LLM 生成個人化回饋
         if self.llm and user_answer:
-            llm_feedback = self._llm_generate_feedback(score, question, user_answer, explanation, next_q)
+            llm_feedback = self._llm_generate_feedback(score, question, user_answer, explanation, next_q, followup)
             if llm_feedback:
                 return llm_feedback
 
         # Fallback: 固定模板
+        no_q_ending = "這次訓練結束了，繼續加油！" if is_final_round else "繼續保持，有這個概念在後面故障排查會更順。"
         if score >= 8:
             intro = f"對！{term} 你懂得挺清楚的。"
-            outro = f"\n\n{next_q}" if next_q else "\n\n繼續保持，有這個概念在後面故障排查會更順。"
+            outro = f"\n\n{next_q}" if next_q else f"\n\n{no_q_ending}"
         elif score >= 5:
             intro = f"方向對，{term} 主要概念有抓到。"
-            outro = f"\n\n補充說明：{explanation}\n\n{next_q}" if next_q else f"\n\n{explanation}\n\n繼續處理故障。"
+            outro = f"\n\n補充說明：{explanation}\n\n{next_q}" if next_q else f"\n\n{explanation}\n\n{no_q_ending}"
         elif score >= 2:
             intro = f"有些概念抓到了，但 {term} 還有幾個關鍵點。"
             outro = f"\n\n{explanation}\n\n{next_q}"
@@ -487,7 +488,8 @@ class ProactiveMentor:
         return f"{intro}{outro}"
 
     def _llm_generate_feedback(self, score: int, question: str, user_answer: str,
-                                correct_explanation: str, next_q: Optional[str]) -> Optional[str]:
+                                correct_explanation: str, next_q: Optional[str],
+                                followup: Optional[Dict] = None) -> Optional[str]:
         """使用 LLM 生成針對學員具體回答的個人化回饋"""
         if not self.llm:
             return None
@@ -508,10 +510,14 @@ class ProactiveMentor:
         # 明確不知道時的額外指示
         dont_know = any(w in user_answer for w in ['不知道', '不確定', '不太清楚', '不太懂', '沒概念', '不清楚'])
 
+        _is_final = (followup or {}).get('is_followup_round', False)
         next_q_str = (
             f"\n在回饋最後，自然地接上這個追問：「{next_q}」"
             if next_q else
-            "\n回饋後不需要再追問，鼓勵學員繼續去處理故障。"
+            "\n回饋後不需要再追問。" + (
+                "給予鼓勵性結語，情境已完整結束。" if _is_final else
+                "鼓勵學員繼續去處理故障。"
+            )
         )
 
         dont_know_guide = (

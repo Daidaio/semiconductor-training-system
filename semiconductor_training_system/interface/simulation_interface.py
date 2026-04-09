@@ -858,6 +858,34 @@ class SimulationTrainingSystem:
         explanation = _CLOSING_EXPL.get(fault_type, '系統性排查：症狀→根因→處置。')
         score = self._quick_score(user_input, keywords)
 
+        # 結尾反思用的 Socratic 追問（依故障類型，適合「情境已結束」的提問方式）
+        _CLOSING_SOCRATIC = {
+            'stage_error': {
+                'standard':  '如果 overlay 誤差固定偏向某個方向，你會先懷疑是哪個子系統的問題？',
+                'challenge': '如果同時出現 X 軸偏移和旋轉誤差，你會怎麼系統性縮小根因範圍？',
+            },
+            'contamination': {
+                'standard':  '清潔完成後，你會用什麼方法確認污染已完全移除？',
+                'challenge': '如果污染是週期性出現的，你會怎麼設計預防性的檢查機制？',
+            },
+            'lens_hotspot': {
+                'standard':  '鏡片溫度穩定後，你如何驗證焦點位置已恢復正常？',
+                'challenge': '如果熱點問題只在特定批次後出現，你會怎麼找出觸發條件？',
+            },
+            'dose_drift': {
+                'standard':  '劑量補償完成後，你會怎麼確認補償量是否準確？',
+                'challenge': '如果劑量在一天內有規律性漂移趨勢，你會怎麼分析根因？',
+            },
+            'focus_drift': {
+                'standard':  '焦距調整後，你如何確認製程視窗已恢復規格內？',
+                'challenge': '如果焦距漂移與某個環境參數有相關性，你會如何設計實驗找出它？',
+            },
+        }
+        closing_socratic = _CLOSING_SOCRATIC.get(fault_type, {
+            'standard':  '這次故障處理完後，你覺得最需要加強哪方面的知識？',
+            'challenge': '如果下次遇到類似症狀，你會調整哪些排查步驟？',
+        })
+
         # 用 ProactiveMentor LLM 生成個人化回饋
         if self.proactive_mentor:
             tmp_followup = {
@@ -865,7 +893,7 @@ class SimulationTrainingSystem:
                 'term_name': fault_type,
                 'answer_keywords': keywords,
                 'correct_explanation': explanation,
-                'socratic_followup': {}
+                'socratic_followup': closing_socratic,  # 提供結尾追問，避免 LLM 說「繼續處理故障」
             }
             feedback = self.proactive_mentor._generate_followup_feedback(
                 score=score,
