@@ -107,6 +107,7 @@ class SimulationTrainingSystem:
         self.pending_follow_up = None  # 待回答的反問問題
         self.pending_theory_context = None  # 待反問的理論上下文（延遲生成反問）
         self.scenario_completed = False  # 場景是否完成
+        self._closing_followup_pending = False  # 結尾反思後還有 Socratic 追問待回答
 
         print("[OK] System ready!")
 
@@ -125,6 +126,7 @@ class SimulationTrainingSystem:
 
         self.current_scenario = scenario_info
         self.session_active = True
+        self._closing_followup_pending = False
         self.action_history = []
         self.last_update_time = datetime.now()
 
@@ -879,7 +881,11 @@ class SimulationTrainingSystem:
                 feedback = f"沒關係，這次先把流程走過一遍。核心概念：{explanation}\n\n繼續努力！"
 
         action_log += f"\n[{timestamp}] [反思評估] 情境結束"
-        self.session_active = False  # 正式結束情境，不再接受操作輸入
+        # 若 proactive_mentor 生成了 Socratic 追問，先讓使用者回答再結束
+        if self.proactive_mentor and self.proactive_mentor.pending_followup:
+            self._closing_followup_pending = True  # 等追問回答後再設 session_active=False
+        else:
+            self.session_active = False  # 正式結束情境，不再接受操作輸入
         self.conversation_history.extend([
             {"role": "user",      "content": user_input},
             {"role": "assistant", "content": feedback},
@@ -940,6 +946,17 @@ class SimulationTrainingSystem:
             full_response += f"\n\n{difficulty_hint}"
 
         action_log += f"\n[{timestamp}] [反問評估] 得分: {score}/10 | 難度調整為: {difficulty}"
+
+        # 結尾反思後的 Socratic 追問回答完畢，正式結束情境
+        if self._closing_followup_pending:
+            self._closing_followup_pending = False
+            self.session_active = False
+            conversation_history.extend([
+                {"role": "user", "content": user_input},
+                {"role": "assistant", "content": full_response},
+                {"role": "sys_status", "content": "✅ 本次訓練情境結束。"},
+            ])
+            return "", equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log
 
         conversation_history.extend([
             {"role": "user", "content": user_input},

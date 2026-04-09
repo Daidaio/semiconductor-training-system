@@ -1390,6 +1390,7 @@ function sendChat(txt){
     }
     // 情境正式結束
     if(d.session_ended){
+      if(tickTimer){clearInterval(tickTimer);tickTimer=null;}  // 停止 tick，不再觸發告警
       if(d.sys_msg) addMsg('sys', d.sys_msg);
       _setQAMode(false);
       $ci.disabled=true;
@@ -1896,6 +1897,7 @@ document.addEventListener('keydown',function(e){
     case 'KeyA':case 'ArrowLeft':  if(!_qaMode)moveL=true;break;
     case 'KeyD':case 'ArrowRight': if(!_qaMode)moveR=true;break;
     case 'KeyE':
+      if(_qaMode) break;  // QA 問答模式中禁止所有設備互動
       if(hmiOpen){closeHMI();break;}
       if(maintOpen){closeMaintenance();break;}
       if(inspecting){closeInspect();break;}
@@ -1981,6 +1983,7 @@ function _addAiMsgNoQA(msg){
   if(!msg) return;
   var sig = msg.slice(0, 80);
   if(sig === _lastAiMsg) return;
+  _lastAiMsg = sig;  // 更新去重記錄，避免 tick 重複顯示同一訊息
   addMsg('ai', msg);  // addMsg 已移除問號自動觸發
 }
 
