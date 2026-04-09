@@ -350,9 +350,10 @@ class ScenarioEngine:
         Returns:
             情境資訊
         """
-        # 選擇情境
+        # 選擇情境（只選有互動設備的情境，排除冷卻/真空等無對應裝置的情境）
+        _AVAILABLE = ["alignment_drift", "optical_contamination", "power_fluctuation"]
         if scenario_type is None:
-            scenario_type = random.choice(list(self.fault_scenarios.keys()))
+            scenario_type = random.choice(_AVAILABLE)
 
         self.current_scenario = self.fault_scenarios[scenario_type]
         self.scenario_type = scenario_type

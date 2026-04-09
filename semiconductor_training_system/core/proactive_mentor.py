@@ -35,6 +35,17 @@ class ProactiveMentor:
         self.llm = llm_handler
         self.last_alert = None  # 最後一次告警
         self.technical_terms = {}  # 記錄提到的專業術語
+        self.pending_followup = None   # {'question', 'term_name', 'answer_keywords', 'correct_explanation'}
+        self.student_scores: List[int] = []   # 歷史得分，用來調整難度
+        self.difficulty = 'standard'   # 'easy' | 'standard' | 'challenge'
+
+    def reset_session(self):
+        """新情境開始時重置本次學習狀態（不影響長期記錄）"""
+        self.pending_followup = None
+        self.student_scores = []
+        self.difficulty = 'standard'
+        self.last_alert = None
+        self.technical_terms = {}
 
     def generate_fault_alert(self, fault_info: Dict, current_state: Dict) -> str:
         """
@@ -104,10 +115,10 @@ class ProactiveMentor:
             return 'temperature'
         elif 'lens' in scenario_lower or 'optical' in scenario_lower or 'contamination' in scenario_lower:
             return 'lens_contamination'
-        elif 'align' in scenario_lower:
+        elif 'align' in scenario_lower or 'power_fluctuation' in scenario_lower:
             return 'alignment'
 
-        # 從當前狀態推斷（檢查哪個參數異常）
+        # 從當前狀態推斷（以感測器警告閾值為準）
         cooling_flow = current_state.get('cooling_flow', 5.0)
         vacuum = current_state.get('vacuum_pressure', 1e-6)
         temp = current_state.get('lens_temp', 23.0)
@@ -115,14 +126,14 @@ class ProactiveMentor:
         align_x = current_state.get('alignment_error_x', 0)
         align_y = current_state.get('alignment_error_y', 0)
 
-        # 判斷哪個參數偏離最嚴重
-        if abs(cooling_flow - 5.0) > 0.5:  # 冷卻流量異常
+        # 使用與感測器一致的閾值（lower_is_bad=True: 低於警告值才算異常）
+        if cooling_flow < 4.5:  # 冷卻流量低於警告值
             return 'cooling_flow'
         elif vacuum > 2e-6:  # 真空度異常
             return 'vacuum_leak'
-        elif abs(temp - 23.0) > 1.0:  # 溫度異常
+        elif temp > 24.0:  # 鏡組溫度高於警告值
             return 'temperature'
-        elif light < 95.0:  # 光強異常
+        elif light < 92.0:  # 光強低於警告值
             return 'lens_contamination'
         elif abs(align_x) > 10 or abs(align_y) > 10:  # 對準異常
             return 'alignment'
@@ -131,30 +142,32 @@ class ProactiveMentor:
         return 'unknown'
 
     def _generate_cooling_alert(self, fault_info: Dict, state: Dict) -> str:
-        """生成冷卻系統異常告警"""
+        """生成冷卻系統異常告警（引導式開場）"""
         flow = state.get('cooling_flow', 5.0)
         temp = state.get('lens_temp', 23.0)
 
-        alert = f"⚠️ [異常偵測] 冷卻流量異常！\n\n"
-        alert += f"📊 當前狀態：\n"
-        alert += f"  • 冷卻流量：{flow:.1f} L/min（正常值 5.0 L/min）\n"
-        alert += f"  • 鏡頭溫度：{temp:.1f}°C\n\n"
+        alert = f"哎，冷卻流量有點怪，現在只有 {flow:.1f} L/min，正常大概要 5.0 左右，鏡頭溫度也飄到 {temp:.1f}°C 了。\n\n"
+        opening_question = "先問你：你覺得冷卻系統出問題，溫度偏高，對曝光製程會有什麼影響？"
 
-        alert += f"🔍 可能產生的連鎖問題：\n"
-        alert += f"  1. 熱膨脹 (thermal expansion) → 機械結構尺寸改變\n"
-        alert += f"  2. 對準偏移 (alignment drift) → 影響疊對精度\n"
-        alert += f"  3. Wafer overlay shift → CD uniformity 惡化\n"
-        alert += f"  4. 光學折射率變化 → 曝光劑量 (dose) 偏移\n\n"
+        self.pending_followup = {
+            'question': opening_question,
+            'term_name': '熱膨脹',
+            'answer_keywords': ['溫度', '體積', '膨脹', '尺寸', '結構', '漂移', '偏移', '對準', '精度', '熱'],
+            'correct_explanation': (
+                '溫度升高會造成熱膨脹 (thermal expansion)，'
+                '曝光機的鏡頭、晶圓夾具等金屬結構尺寸跟著變，'
+                '對準精度就下降，上下層圖案偏移，良率也跟著掉。'
+            ),
+            'socratic_followup': {
+                'challenge': "那你知道，熱膨脹造成的對準偏移，大概是什麼量級？怎麼估算？",
+                'standard': "那現在你會先去檢查哪個部件？",
+            }
+        }
 
-        alert += f"💡 建議：先檢查冷卻系統，再評估熱影響範圍\n"
-        alert += f"❓ 有任何不清楚的術語嗎？可以隨時問我！"
-
-        # 記錄提到的專業術語
         self.technical_terms = {
             'thermal expansion': '熱膨脹',
             'alignment drift': '對準偏移',
             'overlay': '疊對精度',
-            'overlay shift': 'overlay偏移',
             'CD uniformity': '關鍵尺寸均勻性',
             'dose': '曝光劑量',
             '熱膨脹': 'thermal expansion',
@@ -162,24 +175,23 @@ class ProactiveMentor:
             'wafer': '晶圓'
         }
 
-        return alert
+        return f"{alert}{opening_question}"
 
     def _generate_vacuum_alert(self, fault_info: Dict, state: Dict) -> str:
         """生成真空系統異常告警"""
         vacuum = state.get('vacuum_pressure', 1e-6)
 
-        alert = f"⚠️ [異常偵測] 真空系統異常！\n\n"
-        alert += f"📊 當前狀態：\n"
-        alert += f"  • 真空度：{vacuum:.2e} Torr（正常值 1.0e-06 Torr）\n\n"
+        alert = f"欸，真空壓力有點偏，現在是 {vacuum:.2e} Torr，正常要維持在 1e-6 左右，差距還挺大的。\n\n"
+        alert += f"真空系統不能輕忽，一旦洩漏 (vacuum leak) 微粒就容易跑進去，particle contamination 會讓 defect density 飆上去，光學鏡面沾到 outgassing 的東西更麻煩，很難清。\n\n"
+        alert += f"先確認真空泵浦和密封件有沒有問題吧，有不懂的術語隨時問我。"
 
-        alert += f"🔍 可能產生的連鎖問題：\n"
-        alert += f"  1. 真空洩漏 (vacuum leak) → 腔體污染\n"
-        alert += f"  2. Particle contamination → Defect density ↑\n"
-        alert += f"  3. Outgassing → 光學元件表面沉積\n"
-        alert += f"  4. 製程壓力不穩 → Critical dimension (CD) 變異\n\n"
-
-        alert += f"💡 建議：立即檢查真空泵浦和密封件\n"
-        alert += f"❓ 有任何不清楚的術語嗎？可以隨時問我！"
+        self.pending_followup = {
+            'question': "你知道 outgassing 為什麼對光學鏡面這麼傷嗎？",
+            'term_name': 'outgassing',
+            'answer_keywords': ['氣體', '揮發', '沉積', '污染', '鏡面', '塗層', '透光', '穿透率', 'transmittance', '分子'],
+            'correct_explanation': 'Outgassing 是材料在真空環境下釋放吸附氣體或揮發物的現象，這些分子會沉積在光學鏡面上，形成薄膜，讓穿透率 (transmittance) 下降，進而影響曝光劑量和解析度。'
+        }
+        alert += f"\n\n{self.pending_followup['question']}"
 
         self.technical_terms = {
             'vacuum leak': '真空洩漏',
@@ -195,25 +207,29 @@ class ProactiveMentor:
         return alert
 
     def _generate_temperature_alert(self, fault_info: Dict, state: Dict) -> str:
-        """生成溫度異常告警"""
+        """生成溫度異常告警（引導式開場）"""
         temp = state.get('lens_temp', 23.0)
 
-        alert = f"⚠️ [異常偵測] 溫度異常！\n\n"
-        alert += f"📊 當前狀態：\n"
-        alert += f"  • 鏡頭溫度：{temp:.1f}°C（正常值 23.0°C）\n\n"
+        alert = f"剛注意到鏡組溫度跑掉了，現在 {temp:.1f}°C，正常要控在 23°C 附近。\n\n"
+        opening_question = "先問你：你知道鏡組溫度偏高，對曝光製程最直接的影響是什麼嗎？"
 
-        alert += f"🔍 可能產生的連鎖問題：\n"
-        alert += f"  1. 熱膨脹 (thermal expansion) → Overlay error ↑\n"
-        alert += f"  2. 折射率漂移 (refractive index drift) → Focus shift\n"
-        alert += f"  3. 光學aberration增加 → Resolution下降\n"
-        alert += f"  4. Wafer flatness改變 → Depth of focus不足\n\n"
-
-        alert += f"💡 建議：檢查溫控系統和散熱裝置\n"
-        alert += f"❓ 有任何不清楚的術語嗎？可以隨時問我！"
+        self.pending_followup = {
+            'question': opening_question,
+            'term_name': '折射率',
+            'answer_keywords': ['光速', '密度', '溫度', '介質', '光路', '偏折', '焦點', '波長', '材料', '折射', '解析'],
+            'correct_explanation': (
+                '鏡組溫度升高，折射率 (refractive index) 就會改變，光路跑掉，'
+                '造成焦點偏移 (focus shift)，解析度下降，曝光品質就有問題了。'
+                '光學系統對溫度非常敏感，差 1°C 就可能超規。'
+            ),
+            'socratic_followup': {
+                'challenge': "那你知道折射率跟溫度的關係可以用什麼來描述？thermo-optic coefficient 你聽過嗎？",
+                'standard': "那現在應該先去看哪個部件的狀態？",
+            }
+        }
 
         self.technical_terms = {
             'thermal expansion': '熱膨脹',
-            'overlay error': '疊對誤差',
             'refractive index': '折射率',
             'refractive index drift': '折射率漂移',
             'focus shift': '焦點偏移',
@@ -226,24 +242,28 @@ class ProactiveMentor:
             '像差': 'aberration'
         }
 
-        return alert
+        return f"{alert}{opening_question}"
 
     def _generate_optical_alert(self, fault_info: Dict, state: Dict) -> str:
-        """生成光學系統異常告警"""
+        """生成光學系統異常告警（引導式開場）"""
         intensity = state.get('light_intensity', 100.0)
 
-        alert = f"⚠️ [異常偵測] 光學系統異常！\n\n"
-        alert += f"📊 當前狀態：\n"
-        alert += f"  • 光學強度：{intensity:.1f}%（正常值 100.0%）\n\n"
+        alert = f"光源強度掉了，現在只剩 {intensity:.1f}%，正常要 100%，這樣劑量就不夠。\n\n"
+        opening_question = "先問你：光源強度不足，你覺得對後續的曝光製程會有什麼影響？"
 
-        alert += f"🔍 可能產生的連鎖問題：\n"
-        alert += f"  1. 鏡頭污染 → Transmittance下降\n"
-        alert += f"  2. 曝光劑量不足 → Photoresist顯影不完全\n"
-        alert += f"  3. CD bias → Line width變窄\n"
-        alert += f"  4. Contrast降低 → Line edge roughness (LER) ↑\n\n"
-
-        alert += f"💡 建議：檢查光源和光學元件清潔度\n"
-        alert += f"❓ 有任何不清楚的術語嗎？可以隨時問我！"
+        self.pending_followup = {
+            'question': opening_question,
+            'term_name': '光阻',
+            'answer_keywords': ['感光', '顯影', '溶解', '圖案', '曝光', '不足', '殘留', '線寬', '光罩', '劑量', '品質'],
+            'correct_explanation': (
+                '光源強度不足代表到達光阻 (photoresist) 的劑量不夠，'
+                '光阻反應不完全，顯影後有殘留，線寬 (CD) 就偏大，圖案不清晰，最終影響良率。'
+            ),
+            'socratic_followup': {
+                'challenge': "那你能說說，光阻感光的機制是什麼？正型跟負型光阻有什麼不同？",
+                'standard': "那現在應該先去檢查哪個部件？",
+            }
+        }
 
         self.technical_terms = {
             'transmittance': '穿透率',
@@ -257,29 +277,42 @@ class ProactiveMentor:
             '線寬': 'line width'
         }
 
-        return alert
+        return f"{alert}{opening_question}"
 
     def _generate_alignment_alert(self, fault_info: Dict, state: Dict) -> str:
-        """生成對準系統異常告警"""
+        """生成對準系統異常告警（引導式開場，不直接講答案）"""
         align_x = state.get('alignment_error_x', 0)
         align_y = state.get('alignment_error_y', 0)
 
-        alert = f"⚠️ [異常偵測] 對準系統異常！\n\n"
-        alert += f"📊 當前狀態：\n"
-        alert += f"  • X軸對準誤差：{align_x:.1f} nm\n"
-        alert += f"  • Y軸對準誤差：{align_y:.1f} nm\n\n"
+        alert = f"哎，對準系統有點問題，X 軸誤差 {align_x:.1f} nm，Y 軸誤差 {align_y:.1f} nm，超出規格了。\n\n"
+        # 引導式開場：先問開放問題，不直接說影響
+        opening_question = "先問你個問題：你知道對準系統出問題，會對製程有什麼影響嗎？"
 
-        alert += f"🔍 可能產生的連鎖問題：\n"
-        alert += f"  1. Overlay error超規 → Yield loss\n"
-        alert += f"  2. Pattern placement error → Device failure\n"
-        alert += f"  3. Layer-to-layer misalignment → Short/Open defects\n"
-        alert += f"  4. Wafer-to-wafer variation → Process capability ↓\n\n"
-
-        alert += f"💡 建議：重新校正對準系統\n"
-        alert += f"❓ 有任何不清楚的術語嗎？可以隨時問我！"
+        self.pending_followup = {
+            'question': opening_question,
+            'term_name': '對準系統',
+            'answer_keywords': ['overlay', '疊對', '對準', '層', '對齊', '偏移', '短路', '斷路',
+                                '良率', 'yield', '圖案', '精度', '誤差', '電路'],
+            'correct_explanation': (
+                'Overlay（疊對誤差）是關鍵影響。'
+                '上下兩層電路圖案對不準，偏太多就可能讓金屬層短路或 via 斷路，良率直接下來。'
+                'ASML 的 DUV 製程一般要求對準誤差 < 3~5 nm，越先進的製程標準越嚴。'
+            ),
+            # 答得好時的 Socratic 追問（依自適應難度）
+            'socratic_followup': {
+                'challenge': (
+                    "那你知道，overlay 誤差多大才算超規嗎？"
+                    "DUV 跟 EUV 的標準一樣嗎？"
+                ),
+                'standard': (
+                    "那你覺得，現在要先做什麼來處理這個對準異常？"
+                ),
+            }
+        }
 
         self.technical_terms = {
             'overlay error': '疊對誤差',
+            'overlay': '疊對精度',
             'yield loss': '良率損失',
             'pattern placement error': '圖案定位誤差',
             'layer-to-layer misalignment': '層間對位偏差',
@@ -287,20 +320,17 @@ class ProactiveMentor:
             'open': '斷路',
             'defect': '缺陷',
             'wafer-to-wafer variation': '片間變異',
-            'process capability': '製程能力',
             '良率': 'yield',
             '缺陷': 'defect'
         }
 
-        return alert
+        return f"{alert}{opening_question}"
 
     def _generate_generic_alert(self, fault_info: Dict, state: Dict) -> str:
         """生成通用異常告警"""
         fault_type = fault_info.get('fault_type', '未知故障')
 
-        alert = f"⚠️ [異常偵測] 偵測到 {fault_type}！\n\n"
-        alert += f"🔍 建議檢查相關參數，評估影響範圍。\n"
-        alert += f"❓ 有任何問題嗎？可以隨時問我！"
+        alert = f"欸，剛偵測到 {fault_type} 這個異常，先去控制面板看一下相關數值，確認是哪個環節出問題。有什麼看不懂的地方就問我。"
 
         return alert
 
@@ -342,6 +372,177 @@ class ProactiveMentor:
             return True, self._llm_explain_term(question)
         else:
             return True, "抱歉，這個術語不在我剛才提到的範圍內。可以更具體地問嗎？"
+
+    # ── 反問評估 ──────────────────────────────────────────────────────────────
+
+    def evaluate_followup_answer(self, answer: str) -> Optional[Dict]:
+        """
+        評估學員對反問的回答，回傳得分、回饋、新難度。
+        呼叫後會清除 pending_followup。
+        """
+        if not self.pending_followup:
+            return None
+
+        followup = self.pending_followup
+        self.pending_followup = None
+
+        answer_lower = answer.lower().strip()
+        keywords = followup['answer_keywords']
+
+        # 關鍵字得分（修正版：避免正確方向的回答得分過低）
+        if keywords:
+            matched = sum(1 for kw in keywords if kw.lower() in answer_lower)
+            if matched == 0:
+                score = 0
+            else:
+                # 至少1個關鍵字 → 基礎分4，再依命中比例線性加分到10
+                score = min(10, 4 + int((matched / len(keywords)) * 7))
+        else:
+            score = 5
+
+        # 長度調整：太短通常沒在認真回答
+        if len(answer) < 6:
+            score = max(0, score - 3)
+        elif len(answer) > 80:
+            score = min(10, score + 1)
+
+        # 明確表示不知道 → 直接給 0，讓系統進入說明模式
+        if any(w in answer for w in ['不知道', '不確定', '不太清楚', '不太懂', '沒概念', '不清楚']):
+            score = 0
+
+        # 記錄並更新難度
+        self.student_scores.append(score)
+        self._update_difficulty()
+
+        feedback = self._generate_followup_feedback(score, followup, answer)
+        return {'score': score, 'feedback': feedback, 'difficulty': self.difficulty}
+
+    def _update_difficulty(self):
+        """根據近期得分調整難度"""
+        if len(self.student_scores) < 2:
+            return
+        recent = self.student_scores[-3:]
+        avg = sum(recent) / len(recent)
+        if avg >= 7.5:
+            self.difficulty = 'challenge'
+        elif avg <= 3.0:
+            self.difficulty = 'easy'
+        else:
+            self.difficulty = 'standard'
+
+    def _generate_followup_feedback(self, score: int, followup: Dict, user_answer: str = '') -> str:
+        """根據得分和自適應難度生成回饋，優先使用 LLM 個人化回應"""
+        term = followup['term_name']
+        explanation = followup['correct_explanation']
+        question = followup.get('question', '')
+        socratic = followup.get('socratic_followup', {})
+
+        # 決定追問：不管分數高低，回答完都問一個確認理解的問題
+        next_q = None
+        if score >= 8:
+            # 答得好：問更深的問題
+            next_q = socratic.get('challenge') if self.difficulty == 'challenge' else socratic.get('standard')
+        elif score >= 5:
+            # 方向對：問操作層面引導
+            next_q = socratic.get('standard')
+        elif score >= 2:
+            # 部分理解：問一個更基礎的確認問題
+            next_q = f"我剛說明了 {term} 的概念，你現在能用自己的話說說，它對製程最直接的影響是什麼嗎？"
+        else:
+            # 完全不知道：說明完後確認有沒有聽懂
+            next_q = f"我說明完了，你有沒有大致理解 {term} 是怎麼影響製程的？試著說說看。"
+
+        # is_followup_round 為 True 表示這已是第二輪確認追問，回答後不再追問
+        is_final_round = followup.get('is_followup_round', False)
+        if next_q and not is_final_round:
+            self.pending_followup = {
+                'question': next_q,
+                'term_name': term,
+                'answer_keywords': followup.get('answer_keywords', []),
+                'correct_explanation': explanation,
+                'socratic_followup': {},
+                'is_followup_round': True   # 下一輪回答完就結束追問
+            }
+
+        # 優先用 LLM 生成個人化回饋
+        if self.llm and user_answer:
+            llm_feedback = self._llm_generate_feedback(score, question, user_answer, explanation, next_q)
+            if llm_feedback:
+                return llm_feedback
+
+        # Fallback: 固定模板
+        if score >= 8:
+            intro = f"對！{term} 你懂得挺清楚的。"
+            outro = f"\n\n{next_q}" if next_q else "\n\n繼續保持，有這個概念在後面故障排查會更順。"
+        elif score >= 5:
+            intro = f"方向對，{term} 主要概念有抓到。"
+            outro = f"\n\n補充說明：{explanation}\n\n{next_q}" if next_q else f"\n\n{explanation}\n\n繼續處理故障。"
+        elif score >= 2:
+            intro = f"有些概念抓到了，但 {term} 還有幾個關鍵點。"
+            outro = f"\n\n{explanation}\n\n{next_q}"
+        else:
+            intro = f"沒關係，{term} 這個概念比較深，我幫你說明一下。"
+            outro = f"\n\n{explanation}\n\n{next_q}"
+
+        return f"{intro}{outro}"
+
+    def _llm_generate_feedback(self, score: int, question: str, user_answer: str,
+                                correct_explanation: str, next_q: Optional[str]) -> Optional[str]:
+        """使用 LLM 生成針對學員具體回答的個人化回饋"""
+        if not self.llm:
+            return None
+
+        difficulty_guide = {
+            'challenge': '學員理解不錯，可以用更深的角度挑戰他，不要直接把答案全給出來。',
+            'standard':  '補充學員沒說到的重點，語氣像資深學長在指導。',
+            'easy':      '用鼓勵語氣耐心解釋，給完整說明，讓學員建立信心。',
+        }.get(self.difficulty, '給予適當引導。')
+
+        score_label = (
+            '答得很好' if score >= 8 else
+            '方向大致對，但還不夠完整' if score >= 5 else
+            '有些靠近，但還有重要概念沒提到' if score >= 2 else
+            '完全不清楚，需要從頭說明'
+        )
+
+        # 明確不知道時的額外指示
+        dont_know = any(w in user_answer for w in ['不知道', '不確定', '不太清楚', '不太懂', '沒概念', '不清楚'])
+
+        next_q_str = (
+            f"\n在回饋最後，自然地接上這個追問：「{next_q}」"
+            if next_q else
+            "\n回饋後不需要再追問，鼓勵學員繼續去處理故障。"
+        )
+
+        dont_know_guide = (
+            "學員坦誠說不知道，絕對不能說「有點靠近」或給讚美。"
+            "直接用耐心語氣說明正確概念。\n"
+        ) if dont_know else ""
+
+        prompt = (
+            f"你是半導體設備訓練系統的 AI 學長，正在對學員的回答給予口語化回饋。\n\n"
+            f"你剛才問學員：「{question}」\n"
+            f"學員的回答：「{user_answer}」\n"
+            f"評估結果：{score_label}（{score}/10）\n\n"
+            f"正確的完整說明：{correct_explanation}\n\n"
+            f"請生成自然的學長回饋（繁體中文，口語，3-4句以內）：\n"
+            f"- {dont_know_guide}"
+            f"- 先針對學員的具體回答點評（肯定對的部分，指出缺漏）\n"
+            f"- {difficulty_guide}\n"
+            f"- 不要逐字重複完整說明，挑最關鍵的點補充\n"
+            f"{next_q_str}"
+        )
+
+        try:
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(self.llm.ask, prompt, False)
+                return future.result(timeout=20)  # 超過 20 秒就退回模板，不阻塞 UI
+        except Exception as e:
+            print(f"[ProactiveMentor] LLM feedback error/timeout: {e}")
+            return None
+
+    # ── 術語解釋 ──────────────────────────────────────────────────────────────
 
     def _explain_term(self, term: str, translation: str) -> str:
         """

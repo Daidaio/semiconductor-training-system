@@ -48,6 +48,16 @@ _session = {
 _captured_state: dict = {}
 _hmi_cache: dict = {}
 
+# ── 動作評估 Session ──────────────────────────────────────────────────────────
+try:
+    from core.sop_definitions import ActionSession, SOP_DEFINITIONS
+    _SOP_OK = True
+except Exception:
+    _SOP_OK = False
+
+_action_session: "ActionSession | None" = None
+_action_session_lock = threading.Lock()
+
 _server_port: int = 0
 
 # ── 快速回應生成（NLU 無法識別時的後備）────────────────────────────────────
@@ -82,62 +92,66 @@ def _smart_response(text: str) -> str:
         return f"{s['value']} {s['unit']}  {st}（正常值 {s['normal']}）"
 
     if topic == "control":
-        parts = ["[控制系統狀態報告]", f"情境：{sc_name}" if sc_name else ""]
+        parts = []
+        if sc_name:
+            parts.append(f"現在跑的是「{sc_name}」這個情境，我幫你看一下各系統狀態：")
+        else:
+            parts.append("幫你快速確認一下各系統狀態：")
         for s in _hmi_cache["sensors"]:
             icon = {"normal": "🟢", "warning": "🟡", "critical": "🔴"}.get(s["status"], "⚪")
             parts.append(f"  {icon} {s['label']}: {s['value']} {s['unit']}")
         if alarms:
-            parts.append(f"\n⚠ 活動警報 {len(alarms)} 項：")
+            parts.append(f"\n目前有 {len(alarms)} 個警報要注意：")
             for a in alarms[:3]:
-                parts.append(f"  [{a['code']}] {a['system']} — {a['msg']}")
+                parts.append(f"  {a['system']} — {a['msg']}")
         else:
-            parts.append("\n✅ 目前無警報，各子系統運行正常。")
+            parts.append("\n目前沒有警報，各子系統都正常。")
         return "\n".join(p for p in parts if p)
 
     if topic == "cooling":
         s = sensors.get("冷卻水流量") or sensors.get("冷卻水溫度")
         t = sensors.get("冷卻水溫度")
-        lines = ["[冷卻系統檢查]"]
+        lines = ["幫你看一下冷卻系統："]
         if sensors.get("冷卻水流量"):
             lines.append(f"  流量：{_fmt(sensors['冷卻水流量'])}")
         if t:
             lines.append(f"  水溫：{_fmt(t)}")
         if not lines[1:]:
-            lines.append("  （感測器資料尚未載入）")
+            lines.append("  感測器資料還沒載入，稍等一下。")
         alm = [a for a in alarms if "冷卻" in a.get("system", "")]
         if alm:
-            lines.append(f"⚠ 警報：{alm[0]['msg']}")
+            lines.append(f"有警報：{alm[0]['msg']}")
         return "\n".join(lines)
 
     if topic == "temp":
         s = sensors.get("投影鏡組溫度")
-        return f"[鏡組溫度] {_fmt(s)}" if s else ""
+        return f"鏡組溫度現在是 {_fmt(s)}" if s else ""
 
     if topic == "light":
         s = sensors.get("光源強度")
-        return f"[光源系統] 光源強度 {_fmt(s)}" if s else ""
+        return f"光源強度 {_fmt(s)}" if s else ""
 
     if topic == "vacuum":
         s = sensors.get("真空壓力")
-        return f"[真空系統] 壓力讀數 {_fmt(s)}" if s else ""
+        return f"真空壓力現在是 {_fmt(s)}" if s else ""
 
     if topic == "stage":
         sx = sensors.get("載台位置X"); sy = sensors.get("載台位置Y")
-        parts = ["[晶圓載台]"]
+        parts = ["載台位置："]
         if sx: parts.append(f"  X: {_fmt(sx)}")
         if sy: parts.append(f"  Y: {_fmt(sy)}")
         return "\n".join(parts) if len(parts) > 1 else ""
 
     if topic == "restart":
-        return "[控制系統] 重啟服務指令已接收。請確認無正在進行的曝光程序後，依序關閉子系統，等待 30 秒後重新啟動。"
+        return "重啟的話，先確認沒有在跑曝光程序，然後依序把子系統關掉，等個 30 秒再重新啟動，不要直接硬關。"
 
     if topic == "diag":
-        lines = ["[診斷日誌下載]"]
+        lines = ["診斷日誌幫你拉一下："]
         if alarms:
             for a in alarms:
                 lines.append(f"  {a['code']} | {a['system']} | {a['level'].upper()} | {a['msg']}")
         else:
-            lines.append("  無異常記錄。系統運行正常。")
+            lines.append("  目前沒有異常記錄，系統運行正常。")
         return "\n".join(lines)
 
     return ""
@@ -226,10 +240,17 @@ def _build_hmi_data(state: dict) -> None:
         if norm is not None:
             diff = float(val) - norm
             dev = f"{'+' if diff >= 0 else ''}{diff:.2f} {unit}"
+        if norm is not None and warn is not None:
+            if low_bad:
+                range_str = f"{norm} {unit}（警告 < {warn}）"
+            else:
+                range_str = f"{norm} {unit}（警告 > {warn}）"
+        else:
+            range_str = f"{norm} {unit}" if norm else "-"
         sensors.append({
             "label": label, "value": round(float(val), 3),
             "unit": unit, "status": status,
-            "normal": f"{norm} {unit}" if norm else "-",
+            "normal": range_str,
             "dev": dev,
         })
 
@@ -288,10 +309,11 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         try:
-            if   self.path == "/api/status":     self._api_status()
-            elif self.path == "/api/tick":        self._api_tick()
-            elif self.path == "/api/hmi":         self._api_hmi()
-            elif self.path == "/api/wafer_map":   self._api_wafer_map()
+            if   self.path == "/api/status":       self._api_status()
+            elif self.path == "/api/tick":          self._api_tick()
+            elif self.path == "/api/hmi":           self._api_hmi()
+            elif self.path == "/api/qa_pending":    self._api_qa_pending()
+            elif self.path == "/api/wafer_map":     self._api_wafer_map()
             elif self.path == "/api/process_window": self._api_process_window()
             elif self.path == "/api/secom_summary":  self._api_secom_summary()
             else: super().do_GET()
@@ -299,11 +321,20 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
             pass
 
     def do_POST(self):
-        if   self.path == "/api/start":    self._api_start()
-        elif self.path == "/api/chat":     self._api_chat()
-        elif self.path == "/api/exposure": self._api_exposure()
-        elif self.path == "/api/fault":    self._api_fault()
-        else: self.send_response(404); self.end_headers()
+        try:
+            if   self.path == "/api/start":    self._api_start()
+            elif self.path == "/api/chat":     self._api_chat()
+            elif self.path == "/api/exposure": self._api_exposure()
+            elif self.path == "/api/fault":    self._api_fault()
+            elif self.path == "/api/action":   self._api_action()
+            elif self.path == "/api/hint":     self._api_hint()
+            else: self.send_response(404); self.end_headers()
+        except Exception as e:
+            print(f"[POST {self.path}] 未捕捉例外: {e}")
+            try:
+                self._json({"ok": False, "error": str(e), "ai_msg": "⚠ 伺服器內部錯誤，請稍後重試。"})
+            except Exception:
+                pass
 
     def log_message(self, *a): pass
 
@@ -338,11 +369,34 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
                 return m.get("content", "")
         return ""
 
+    def _latest_sys(self, msgs):
+        """取最新一條系統狀態訊息（role=sys_status）"""
+        for m in reversed(msgs or []):
+            if isinstance(m, dict) and m.get("role") == "sys_status":
+                return m.get("content", "")
+        return ""
+
     # ── API endpoints ─────────────────────────────────────────────────────────
     def _api_status(self):
         with _session_lock:
             self._json({"started": _session["started"],
                         "msgs": self._msgs_to_list(_session["msgs"])})
+
+    def _api_qa_pending(self):
+        """GET /api/qa_pending — 前端進入內部時查詢是否有待答問題
+        - pending_follow_up（closing_reflection/理論問題）：一律遮擋
+        - proactive_mentor.pending_followup（主動提問）：
+            尚未開始操作時（無 action_session）遮擋；操作中不遮擋
+        """
+        if not _system_instance:
+            self._json({"qa_pending": False}); return
+        if _system_instance.pending_follow_up:
+            self._json({"qa_pending": True}); return
+        pm = _system_instance.proactive_mentor
+        pf = pm.pending_followup if pm else None
+        # is_followup_round=True 是操作引導追問，不遮擋
+        proactive_q = bool(pf and not pf.get('is_followup_round', False))
+        self._json({"qa_pending": proactive_q})
 
     def _api_tick(self):
         with _session_lock:
@@ -353,7 +407,9 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
             snap["eq"], snap["dash"], snap["eq_st"], snap["msgs"], snap["log"])
         with _session_lock:
             _session.update(eq=eq, dash=dash, eq_st=eq_st, msgs=msgs, log=log)
-        self._json({"ok": True, "ai_msg": self._latest_ai(msgs),
+        self._json({"ok": True,
+                    "ai_msg": self._latest_ai(msgs),
+                    "sys_msg": self._latest_sys(msgs),
                     "msgs": self._msgs_to_list(msgs)})
 
     def _api_hmi(self):
@@ -370,8 +426,29 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
         with _session_lock:
             _session.update(started=True, eq=eq, dash=dash,
                             eq_st=eq_st, msgs=msgs, log=log)
+        # 將 scenario_type 轉成 SOP fault_type，讓前端能正確初始化 _activeFaults
+        _SCENARIO_TO_SOP = {
+            'alignment_drift':       'stage_error',
+            'optical_contamination': 'contamination',
+            'power_fluctuation':     'dose_drift',
+            'cooling_failure':       'lens_hotspot',
+            'vacuum_leak':           'focus_drift',
+            'filter_clogged':        'lens_hotspot',
+        }
+        stype = ''
+        if _system_instance.current_scenario:
+            stype = _system_instance.current_scenario.get('scenario_type', '')
+        sop_fault_type = _SCENARIO_TO_SOP.get(stype, '')
+        # 若有 pending followup（proactive mentor 初始問題），告訴前端需遮罩
+        qa_pending = bool(
+            _system_instance.pending_follow_up or
+            (_system_instance.proactive_mentor and
+             _system_instance.proactive_mentor.pending_followup)
+        )
         self._json({"ok": True,
                     "ai_msg": self._latest_ai(msgs) or "情境已開始，請開始檢查設備。",
+                    "sop_fault_type": sop_fault_type,
+                    "qa_pending": qa_pending,
                     "msgs": self._msgs_to_list(msgs)})
 
     def _api_chat(self):
@@ -381,9 +458,16 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
             self._json({"ok": False, "ai_msg": ""}); return
         with _session_lock:
             snap = dict(_session)
-        _, eq, dash, eq_st, msgs, log = _system_instance.process_user_input(
-            text, snap["eq"], snap["dash"], snap["eq_st"],
-            snap["msgs"], snap["log"])
+        try:
+            _, eq, dash, eq_st, msgs, log = _system_instance.process_user_input(
+                text, snap["eq"], snap["dash"], snap["eq_st"],
+                snap["msgs"], snap["log"])
+        except Exception as e:
+            import traceback
+            print(f"[_api_chat] process_user_input 例外: {e}")
+            traceback.print_exc()
+            self._json({"ok": False, "ai_msg": f"學長暫時無法回應，請稍後再試。（{type(e).__name__}）"})
+            return
         with _session_lock:
             _session.update(eq=eq, dash=dash, eq_st=eq_st, msgs=msgs, log=log)
         ai_reply = self._latest_ai(msgs)
@@ -392,7 +476,21 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
             smart = _smart_response(text)
             if smart:
                 ai_reply = smart
-        self._json({"ok": True, "ai_msg": ai_reply,
+        # pending_follow_up 一律遮擋
+        # pending_follow_up（closing_reflection）一律遮擋
+        # proactive pending_followup：第一輪知識問題遮擋，第二輪（is_followup_round）不遮擋
+        if _system_instance.pending_follow_up:
+            qa_pending = True
+        else:
+            pm = _system_instance.proactive_mentor
+            pf = pm.pending_followup if pm else None
+            # is_followup_round=True 表示是操作引導性追問，不遮擋，讓使用者邊操作邊回答
+            qa_pending = bool(pf and not pf.get('is_followup_round', False))
+        # 情境結束旗標
+        session_ended = not bool(_system_instance.session_active)
+        sys_msg = self._latest_sys(msgs)
+        self._json({"ok": True, "ai_msg": ai_reply, "qa_pending": qa_pending,
+                    "session_ended": session_ended, "sys_msg": sys_msg,
                     "msgs": self._msgs_to_list(msgs)})
 
     # ── Physics API ──────────────────────────────────────────────────────────
@@ -458,20 +556,161 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
         self._json({"ok": True, "fault": _noise_model.get_fault_info(),
                     "health": _noise_model.get_health_score()})
 
+    def _api_action(self):
+        """POST /api/action  { component, action, fault_type }
+        操作者互動一個零件並選擇動作 → AI 評估對錯 → 回傳回饋與進度
+        """
+        global _action_session
+        if not _SOP_OK:
+            self._json({"ok": False, "feedback": "SOP 模組未載入"}); return
+
+        data = self._read_json()
+        component  = data.get("component", "")
+        action     = data.get("action", "")
+        fault_type = data.get("fault_type", None)
+
+        with _action_session_lock:
+            # 若故障類型改變或尚無 session，初始化新 session
+            if fault_type and fault_type in SOP_DEFINITIONS:
+                if _action_session is None or _action_session.fault_type != fault_type:
+                    _action_session = ActionSession(fault_type)
+
+            if _action_session is None:
+                # 沒有活躍故障，直接送給 AI 學長聊天
+                self._json({"ok": True, "feedback": "目前沒有活躍故障，可以自由探索環境。",
+                            "no_fault": True}); return
+
+            result = _action_session.evaluate(component, action)
+            adaptive_mode = result.get("adaptive_mode", "standard")
+
+            # ── 1. 同步 AI 學長教學風格（teaching_mode）──────────────────────
+            if _system_instance and _system_instance.ai_mentor:
+                mode_map = {
+                    'challenge':   'challenge',
+                    'standard':    'standard',
+                    'scaffolding': 'scaffolding',
+                    'remedial':    'remedial',
+                }
+                _system_instance.ai_mentor.set_teaching_mode(
+                    mode_map.get(adaptive_mode, 'standard'))
+
+            # ── 2. 同步 ProactiveMentor.difficulty（讓 Socratic 追問一致）──
+            if _system_instance and hasattr(_system_instance, 'proactive_mentor') \
+                    and _system_instance.proactive_mentor:
+                difficulty_map = {
+                    'challenge':   'challenge',
+                    'standard':    'standard',
+                    'scaffolding': 'easy',
+                    'remedial':    'easy',
+                }
+                _system_instance.proactive_mentor.difficulty = \
+                    difficulty_map.get(adaptive_mode, 'standard')
+
+            # ── 3. 操作錯誤時用 LLM 生成自然回饋（替換靜態模板）────────────
+            if not result.get("correct") and _system_instance \
+                    and _system_instance.ai_mentor:
+                sop = SOP_DEFINITIONS.get(_action_session.fault_type if _action_session else "", {})
+                fault_system = sop.get("fault_system", "")
+                try:
+                    from concurrent.futures import ThreadPoolExecutor
+                    def _get_fb():
+                        return _system_instance.ai_mentor.provide_sop_wrong_feedback(
+                            component=component,
+                            action=action,
+                            fault_system=fault_system,
+                            mistake_level=result.get("mistake_level", "full_wrong"),
+                            template_hint=result.get("feedback", ""),
+                        )
+                    with ThreadPoolExecutor(max_workers=1) as ex:
+                        ai_fb = ex.submit(_get_fb).result(timeout=15)
+                except Exception:
+                    ai_fb = None
+                if ai_fb:
+                    result["feedback"] = ai_fb   # LLM 回饋取代模板
+
+            # ── 4. 故障排除完成，產生反思問題並重置 session ────────────────
+            if result.get("all_done"):
+                if _PHYSICS_OK:
+                    _noise_model.clear_fault()
+                ft = _action_session.fault_type if _action_session else ""
+                current_score = result.get("score", 70)
+                # 用 AI 學長生成反思收尾問題（一定要有 fallback）
+                _CLOSING_FALLBACKS = {
+                    'contamination':  '故障排除完成！最後問你：光學污染通常是怎麼發生的？你會怎麼預防它？',
+                    'stage_error':    '故障排除完成！最後問你：對準誤差超規，最直接影響的是哪個製程指標？為什麼？',
+                    'lens_hotspot':   '故障排除完成！最後問你：鏡片過熱對曝光品質的最直接影響是什麼？',
+                    'dose_drift':     '故障排除完成！最後問你：劑量漂移超規，會對光阻製程造成什麼影響？',
+                    'focus_drift':    '故障排除完成！最後問你：焦距漂移超規，對解析度和製程視窗有什麼影響？',
+                }
+                closing_q = _CLOSING_FALLBACKS.get(ft,
+                    '故障排除完成！最後問你：這次故障的根本原因是什麼？你從處理過程中學到了什麼？')
+                if _system_instance and _system_instance.ai_mentor:
+                    try:
+                        from concurrent.futures import ThreadPoolExecutor
+                        def _gen_closing():
+                            return _system_instance.ai_mentor.generate_closing_question(ft, current_score)
+                        with ThreadPoolExecutor(max_workers=1) as ex:
+                            llm_q = ex.submit(_gen_closing).result(timeout=15)
+                        if llm_q and llm_q.strip():
+                            closing_q = llm_q.strip()
+                    except Exception as e:
+                        print(f"[closing_q] LLM 生成失敗，用 fallback: {e}")
+                # 存入 pending_follow_up
+                if _system_instance:
+                    _system_instance.pending_follow_up = {
+                        'question': closing_q,
+                        'type': 'closing_reflection',
+                        'fault_type': ft,
+                    }
+                result["closing_question"] = closing_q
+                _action_session = None
+
+        # proactive_mentor Socratic 追問屬對話式，不遮擋操作
+        qa_pending = bool(_system_instance.pending_follow_up)
+        self._json({"ok": True, "qa_pending": qa_pending, **result})
+
+    def _api_hint(self):
+        """POST /api/hint  { fault_type }
+        操作者求助學長 → 扣 5 分 → 依自適應模式給提示
+        """
+        global _action_session
+        if not _SOP_OK:
+            self._json({"ok": False, "hint": "SOP 模組未載入"}); return
+
+        data = self._read_json()
+        fault_type = data.get("fault_type", None)
+
+        with _action_session_lock:
+            if fault_type and fault_type in SOP_DEFINITIONS:
+                if _action_session is None or _action_session.fault_type != fault_type:
+                    _action_session = ActionSession(fault_type)
+
+            if _action_session is None:
+                self._json({"ok": True, "hint": "目前沒有活躍故障。", "score": 100}); return
+
+            result = _action_session.get_hint()
+
+        self._json({"ok": True, **result})
+
 
 # ── 啟動伺服器 ────────────────────────────────────────────────────────────────
 
 def _start_server(directory: str, port: int = 8765) -> int:
+    import os
     global _server_port
     if _server_port:
         return _server_port
+    # Render / 雲端部署時使用 PORT 環境變數，本機則用傳入的 port
+    port = int(os.environ.get("PORT", port))
+    # 0.0.0.0 允許外部連線（雲端部署必要）；本機測試仍可正常使用
+    bind_host = "0.0.0.0"
     handler = functools.partial(_GameHandler, directory=directory)
     for p in range(port, port + 20):
         try:
-            srv = http.server.HTTPServer(("127.0.0.1", p), handler)
+            srv = http.server.HTTPServer((bind_host, p), handler)
             threading.Thread(target=srv.serve_forever, daemon=True).start()
             _server_port = p
-            print(f"[OK] Game server: http://127.0.0.1:{p}/")
+            print(f"[OK] Game server: http://{bind_host}:{p}/")
             return p
         except OSError:
             continue
@@ -482,8 +721,7 @@ def _start_server(directory: str, port: int = 8765) -> int:
 # viewer.html — 完整第一人稱遊戲
 # ══════════════════════════════════════════════════════════════════════════════
 
-_VIEWER_HTML = """\
-<!DOCTYPE html>
+_VIEWER_HTML = """<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <title>ASML Virtual Fab</title>
 <style>
@@ -491,6 +729,46 @@ _VIEWER_HTML = """\
 html,body{width:100%;height:100%;overflow:hidden;background:#050d1a;
   font-family:Consolas,"Courier New",monospace;color:#cde;}
 canvas{position:fixed;top:0;left:0;display:block;}
+/* ── 3D 零件名稱標籤（DOM 疊層，論文用）── */
+#label-layer{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;}
+.eq-label{
+  position:absolute;
+  transform:translate(-50%,-50%);
+  background:rgba(8,18,50,0.88);
+  border:2px solid rgba(100,180,255,0.90);
+  border-radius:8px;
+  padding:5px 16px;
+  color:#ffffff;
+  font-family:"Arial Black","Arial",sans-serif;
+  font-weight:900;
+  font-size:15px;
+  letter-spacing:0.5px;
+  white-space:nowrap;
+  text-shadow:0 0 8px rgba(80,160,255,0.8);
+  display:none;
+  user-select:none;
+}
+/* 標題標籤（機型名稱，固定在畫面頂部）*/
+.eq-label-title{
+  position:fixed;
+  top:14px;
+  left:50%;
+  transform:translateX(-50%);
+  background:rgba(8,18,50,0.90);
+  border:2px solid rgba(100,180,255,0.95);
+  border-radius:10px;
+  padding:7px 28px;
+  color:#ffffff;
+  font-family:"Arial Black","Arial",sans-serif;
+  font-weight:900;
+  font-size:18px;
+  letter-spacing:1px;
+  white-space:nowrap;
+  text-shadow:0 0 10px rgba(80,160,255,0.9);
+  display:none;
+  user-select:none;
+  z-index:11;
+}
 
 /* ── Loading ── */
 #loading-screen{position:fixed;inset:0;background:#050d1a;z-index:900;
@@ -556,8 +834,22 @@ canvas{position:fixed;top:0;left:0;display:block;}
   padding:7px 12px;border-radius:6px;font:11px Consolas,monospace;
   cursor:pointer;width:100%;margin-bottom:6px;text-align:left;transition:.2s;}
 .qbtn:hover{border-color:#4af;background:rgba(20,44,70,.9);}
+.qbtn-operate{border-color:#5a3010;color:#ffa060;}
+.qbtn-operate:hover{border-color:#ffa060;background:rgba(40,20,5,.9);}
+.action-sec{font-size:10px;letter-spacing:1px;margin:8px 0 4px;padding:2px 0;border-bottom:1px solid #1a2a3a;}
+.action-sec-inspect{color:#4af;}
+.action-sec-operate{color:#ffa060;}
 #inspect-close{color:#5a8a9a;font-size:10px;margin-top:6px;cursor:pointer;text-align:center;}
 #inspect-close:hover{color:#4af;}
+#score-bar{padding:7px 14px;background:rgba(5,13,26,.95);border-bottom:1px solid #1a4a7c;
+  display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
+#score-val{color:#4fc;font-size:13px;font-weight:bold;font-family:Consolas,monospace;}
+#fault-prog{color:#ffa500;font-size:10px;font-family:Consolas,monospace;}
+#hint-btn{background:rgba(60,30,5,.9);border:1px solid #a06030;color:#ffa060;
+  padding:5px 10px;border-radius:5px;font:10px Consolas,monospace;cursor:pointer;
+  width:calc(100% - 20px);margin:5px 10px 0;transition:.2s;}
+#hint-btn:hover{border-color:#ffa060;background:rgba(80,40,5,.9);}
+#hint-btn:disabled{opacity:.4;cursor:not-allowed;}
 
 /* ── Controls Bar ── */
 #ctrl-bar{position:fixed;bottom:8px;display:none;transform:translateX(-50%);
@@ -730,10 +1022,18 @@ canvas{position:fixed;top:0;left:0;display:block;}
 </style>
 </head><body>
 
+<!-- 3D 零件標籤疊層 -->
+<div id="label-layer"></div>
+
 <!-- Chat Panel -->
 <div id="chat-panel">
   <div id="chat-hdr"><div class="alive"></div>AI 學長 — 即時輔導</div>
+  <div id="score-bar">
+    <span id="score-val">分數：100</span>
+    <span id="fault-prog">—</span>
+  </div>
   <div id="chat-msgs"><div class="msg ms">⏳ 等待訓練開始…</div></div>
+  <button id="hint-btn" onclick="askHint()" disabled>💬 求助學長（-5 分）</button>
   <div id="chat-input-row">
     <input id="ci" placeholder="問學長… (C 鍵)" />
     <button id="cs">送出</button>
@@ -817,12 +1117,18 @@ canvas{position:fixed;top:0;left:0;display:block;}
         <div class="maint-progress-bar" id="maint-prog-bar" style="width:0%"></div>
       </div>
       <div class="maint-status">
-        <span id="maint-prog-text">步驟 0 / 0</span>
+        <span id="maint-prog-text">進行中...</span>
         <span id="maint-fault-label"></span>
       </div>
-      <div id="maint-steps"></div>
+      <div id="maint-steps" style="padding:16px 12px;color:#8ab;font-size:12px;line-height:1.8;">
+        請靠近相關零件並按 <b style="color:#ffa500;">[E]</b> 互動，<br>
+        自行判斷處理順序。<br><br>
+        <span style="color:#5a7a5a;font-size:11px;">▸ 橘色發光的零件是故障相關區域<br>
+        ▸ 可按 <b>[C]</b> 與 AI 學長對話<br>
+        ▸「求助學長」可獲得提示（-5分）</span>
+      </div>
       <div class="maint-complete" id="maint-complete">
-        ✅ 維修完成！系統已恢復正常。
+        ✅ 故障排除完成！系統已恢復正常。
       </div>
     </div>
   </div>
@@ -1006,19 +1312,59 @@ var DESC={
   '反射鏡':'高精度反射鏡，用於光束折轉和準直，鍍膜反射率 >99%。',
   'HMI 控制面板':'設備主控制面板，顯示所有感測器即時數值、警報狀態及 SECOM 製程異常指標。'
 };
-var QUICK_ACTIONS={
-  '投影鏡組':['檢查投影鏡組溫度','調整投影鏡組溫度補償','記錄鏡組溫度數據'],
-  '晶圓載台':['查看晶圓載台位置誤差','重新校準晶圓載台','檢查載台馬達電流'],
-  '雷射光源':['查看光源強度和穩定性','重設雷射能量校準','檢查雷射氣體壓力'],
-  '液浸冷卻':['檢查冷卻水流量和溫度','清洗液浸水頭','更換過濾器'],
-  '照明系統':['查看光源強度和穩定性','調整照明均勻性','檢查快門功能'],
-  '控制系統':['查看控制系統狀態','重啟控制系統服務','下載診斷日誌'],
-  '晶圓傳送':['確認晶圓傳送狀態','重新對準傳送手臂','檢查 FOUP 鎖定'],
-  '通風排氣':['檢查真空系統壓力','清潔排氣過濾器','查看氣流量'],
-  'DUV光束':['查看光源強度和穩定性','對準光束路徑','檢查光束擋板'],
-  '反射鏡':['查看光源強度和穩定性','清潔反射鏡面','檢查反射率'],
-  '光罩載台':['查看光罩載台狀態','檢查光罩對準精度','更換光罩','查看光罩掃描速度'],
-  '晶圓傳送手臂':['確認晶圓傳送狀態','重新對準傳送手臂','查看手臂馬達電流','檢查 End Effector']
+var COMPONENT_ACTIONS={
+  '投影鏡組':{
+    inspect:['查看鏡片溫度','確認鏡片溫升趨勢','查看 CDU 數值'],
+    operate:['降低曝光劑量','停止曝光','恢復正常劑量']
+  },
+  '晶圓載台':{
+    inspect:['查看 Overlay 數值','查看載台位置誤差','確認氣浮壓力'],
+    operate:['執行載台校正','執行 Cal Routine','恢復量產','驗證 Overlay 改善結果']
+  },
+  '雷射光源':{
+    inspect:['確認偏差量','查看劑量讀值','確認光束穩定性'],
+    operate:['執行劑量校正','清潔劑量感測器','確認穩定']
+  },
+  '液浸冷卻':{
+    inspect:['確認流量讀值','查看冷卻水溫度','查看冷卻水流量'],
+    operate:['關閉進水閥','目視檢查管路','清潔過濾器','恢復供水','確認流量正常']
+  },
+  '照明系統':{
+    inspect:['確認漂移量','查看焦距偏移','查看照明均勻性'],
+    operate:['執行 Focus 校正','等待熱穩定','降低劑量']
+  },
+  '控制系統':{
+    inspect:['查看控制系統狀態','查看系統日誌'],
+    operate:['降低曝光劑量','停止曝光','恢復曝光','執行校正']
+  },
+  '通風排氣':{
+    inspect:['確認壓力讀值','查看真空壓力','查看氣流量'],
+    operate:['關閉閥門','關閉 V-201','目視檢查管路接頭','更換 O-ring 密封圈','重新抽真空並確認壓力','確認完成']
+  },
+  '光罩載台':{
+    inspect:['確認異常 field','查看光罩狀態','目視檢查光罩表面'],
+    operate:['停機並卸載光罩','清潔光罩','更換光罩','裝回光罩並執行對準']
+  },
+  'HMI 螢幕':{
+    inspect:['查看 CDU Map','查看感測器數值','查看 Overlay 數值'],
+    operate:['降低曝光劑量','停止曝光','執行校正']
+  },
+  '晶圓傳送':{
+    inspect:['確認晶圓傳送狀態','查看 FOUP 狀態'],
+    operate:['重新對準傳送手臂','確認 FOUP 鎖定']
+  },
+  '晶圓傳送手臂':{
+    inspect:['確認晶圓傳送狀態','查看手臂馬達電流'],
+    operate:['重新對準傳送手臂','檢查 End Effector']
+  },
+  'DUV光束':{
+    inspect:['查看光源強度和穩定性','確認光束穩定性'],
+    operate:['對準光束路徑','檢查光束擋板']
+  },
+  '反射鏡':{
+    inspect:['查看光源強度和穩定性','確認反射率'],
+    operate:['清潔反射鏡面']
+  },
 };
 (function(){
   for(var i=0;i<10;i++){MA['Lens_'+i]='檢查投影鏡組溫度';ML['Lens_'+i]='投影鏡組';}
@@ -1195,9 +1541,10 @@ function isShellMesh(obj){return shellMeshes.indexOf(obj)!==-1;}
 function enterInterior(){
   insideMode=true;
   if(typeof exteriorShell!=='undefined') exteriorShell.visible=false;
-  // 個別隱藏 shell meshes，避免 raycaster 仍打到它們（Three.js 只看 mesh 自身 visible）
   shellMeshes.forEach(function(m){m.visible=false;});
   if(glbModel) glbModel.visible=true;
+  _labelSprites.forEach(function(s){s.visible=true;});
+  _outlineMeshes.forEach(function(o){o.visible=true;});
   camera.position.set(0,1.6,4);
   addMsg('sys','已進入機器內部。靠近部件按 <b>E</b> 檢查，靠近 HMI 螢幕按 <b>E</b> 查看感測器數值。');
 }
@@ -1205,33 +1552,19 @@ function enterInterior(){
 // ── Maintenance SOP 資料 ────────────────────────────────────────────────────────
 // 每個故障對應：觸發節點名稱、SOP 步驟、故障描述
 var MAINT_SOP = {
-  // 真空系統異常（AI 對話觸發）
-  vacuum_abnormal: {
+  // 真空系統異常（已移除：Duct mesh 隱藏，無法互動）
+  vacuum_abnormal_disabled: {
     title: '真空系統異常',
     subtitle: 'Vacuum System Fault — 接頭洩漏 / 閥門故障',
     triggerMeshes: ['Duct_Top','Duct_Vent1','Duct_Vent2'],
     fault_api: null,  // 由 AI 對話觸發，不從 SECOM 注入
     steps: [
-      {title:'確認系統狀態', desc:'查看 HMI 真空壓力讀值，確認異常壓力範圍。\\n正常值：< 1×10⁻³ mbar', action:'確認壓力讀值'},
-      {title:'關閉真空閥門 V-201', desc:'找到排氣管路旁的 V-201 閥門，順時針轉緊關閉，\\n防止洩漏範圍擴大。', action:'關閉閥門'},
-      {title:'檢查接頭密封性', desc:'目視檢查管路接頭是否有鬆脫或破損，\\n用手輕壓接頭確認固定狀態。', action:'確認接頭緊固'},
-      {title:'更換 O-ring 密封圈', desc:'若接頭密封圈老化，需更換新的 O-ring（型號：AS-568A-116）\\n並確認安裝方向正確。', action:'完成更換'},
-      {title:'重新抽真空', desc:'打開泵浦，緩慢開啟 V-201，\\n觀察壓力計是否在 5 分鐘內恢復至正常範圍。', action:'開啟抽真空'},
-      {title:'確認壓力恢復', desc:'壓力讀值穩定在 < 1×10⁻³ mbar 且無持續下降趨勢，\\n系統恢復正常。', action:'確認完成'},
-    ]
-  },
-  // 冷卻水異常
-  cooling_water: {
-    title: '冷卻水系統異常',
-    subtitle: 'Cooling Water Fault — 流量不足 / 溫度異常',
-    triggerMeshes: ['Immersion_Hood','Immersion_Supply','Immersion_Return'],
-    fault_api: null,
-    steps: [
-      {title:'查看流量計讀值', desc:'HMI 顯示冷卻水流量，正常值：12–15 L/min。\\n目前讀值異常，需進一步排查。', action:'確認流量讀值'},
-      {title:'關閉冷卻水進水閥', desc:'找到進水管路上的藍色手動閥，逆時針轉動關閉，\\n停止水流以便檢查。', action:'關閉進水閥'},
-      {title:'檢查管路是否洩漏', desc:'目視檢查 Immersion Hood 周圍的管路接頭，\\n查看是否有水漬、潮濕痕跡。', action:'確認管路無洩漏'},
-      {title:'清潔過濾器', desc:'拆下進水口過濾器，用清水沖洗後重新裝回，\\n過濾器堵塞是流量不足最常見原因。', action:'完成清潔'},
-      {title:'恢復供水並確認流量', desc:'慢慢打開進水閥，觀察流量計是否恢復正常，\\n同時確認溫度回到 22±0.1°C。', action:'確認流量正常'},
+      {title:'確認系統狀態', desc:'查看 HMI 真空壓力讀值，確認異常壓力範圍。\n正常值：< 1×10⁻³ mbar', action:'確認壓力讀值'},
+      {title:'關閉真空閥門 V-201', desc:'找到排氣管路旁的 V-201 閥門，順時針轉緊關閉，\n防止洩漏範圍擴大。', action:'關閉閥門'},
+      {title:'檢查接頭密封性', desc:'目視檢查管路接頭是否有鬆脫或破損，\n用手輕壓接頭確認固定狀態。', action:'確認接頭緊固'},
+      {title:'更換 O-ring 密封圈', desc:'若接頭密封圈老化，需更換新的 O-ring（型號：AS-568A-116）\n並確認安裝方向正確。', action:'完成更換'},
+      {title:'重新抽真空', desc:'打開泵浦，緩慢開啟 V-201，\n觀察壓力計是否在 5 分鐘內恢復至正常範圍。', action:'開啟抽真空'},
+      {title:'確認壓力恢復', desc:'壓力讀值穩定在 < 1×10⁻³ mbar 且無持續下降趨勢，\n系統恢復正常。', action:'確認完成'},
     ]
   },
   // 鏡片過熱（SECOM lens_hotspot）
@@ -1241,11 +1574,11 @@ var MAINT_SOP = {
     triggerMeshes: ['POB_Barrel','POB_Top_Cap','POB_Bottom'],
     fault_api: 'lens_hotspot',
     steps: [
-      {title:'確認鏡片溫度', desc:'在 HMI CDU 面板查看各鏡片元件溫升。\\n正常待機溫升應 < 0.5 K，目前超標。', action:'查看溫度數值'},
-      {title:'降低曝光劑量', desc:'立即在 HMI 將 Dose 降低 20%（例如 30→24 mJ/cm²），\\n減少熱輸入給鏡片。', action:'已調降 Dose'},
-      {title:'等待自然冷卻', desc:'停止曝光，等待鏡片溫度透過自然對流冷卻。\\n依熱時間常數（τ₁≈90s, τ₂≈15min），\\n需等待約 5 分鐘。', action:'確認溫度下降中'},
-      {title:'檢查冷卻水流量', desc:'確認鏡筒冷卻水迴路流量是否正常，\\n鏡筒周圍溫度感測器讀值應趨近室溫。', action:'確認冷卻正常'},
-      {title:'恢復曝光並監控', desc:'緩慢恢復正常劑量，持續監控 CDU 趨勢圖，\\n確認 CD 3σ 回到規格內（< 4 nm）。', action:'確認 CDU 恢復正常'},
+      {title:'確認鏡片溫度', desc:'在 HMI CDU 面板查看各鏡片元件溫升。\n正常待機溫升應 < 0.5 K，目前超標。', action:'查看溫度數值'},
+      {title:'降低曝光劑量', desc:'立即在 HMI 將 Dose 降低 20%（例如 30→24 mJ/cm²），\n減少熱輸入給鏡片。', action:'已調降 Dose'},
+      {title:'等待自然冷卻', desc:'停止曝光，等待鏡片溫度透過自然對流冷卻。\n依熱時間常數（τ₁≈90s, τ₂≈15min），\n需等待約 5 分鐘。', action:'確認溫度下降中'},
+      {title:'檢查冷卻水流量', desc:'確認鏡筒冷卻水迴路流量是否正常，\n鏡筒周圍溫度感測器讀值應趨近室溫。', action:'確認冷卻正常'},
+      {title:'恢復曝光並監控', desc:'緩慢恢復正常劑量，持續監控 CDU 趨勢圖，\n確認 CD 3σ 回到規格內（< 4 nm）。', action:'確認 CDU 恢復正常'},
     ]
   },
   // 光罩污染（SECOM contamination）
@@ -1255,11 +1588,11 @@ var MAINT_SOP = {
     triggerMeshes: ['Reticle_Stage_Mesh','Reticle_Mesh'],
     fault_api: 'contamination',
     steps: [
-      {title:'確認污染位置', desc:'在 HMI 查看 CDU Map，污染通常表現為\\n特定 field 位置的系統性 CD 偏移。', action:'確認異常 field'},
-      {title:'停機並卸載光罩', desc:'通知工程師停止生產，\\n按 SOP 將光罩從 reticle stage 取出並放入專用載具。', action:'光罩已卸載'},
-      {title:'目視檢查光罩', desc:'在潔淨燈箱下目視檢查光罩表面，\\n尋找顆粒、水漬、或圖案損傷。', action:'確認污染位置'},
-      {title:'光罩清潔（或更換）', desc:'輕微污染：使用 DI water + 氮氣吹淨。\\n嚴重污染：送回光罩廠重新清潔或更換。', action:'清潔/更換完成'},
-      {title:'裝回並執行對準', desc:'裝回光罩，執行 reticle alignment，\\n確認套刻誤差在規格內後恢復生產。', action:'對準完成'},
+      {title:'確認污染位置', desc:'在 HMI 查看 CDU Map，污染通常表現為\n特定 field 位置的系統性 CD 偏移。', action:'確認異常 field'},
+      {title:'停機並卸載光罩', desc:'通知工程師停止生產，\n按 SOP 將光罩從 reticle stage 取出並放入專用載具。', action:'光罩已卸載'},
+      {title:'目視檢查光罩', desc:'在潔淨燈箱下目視檢查光罩表面，\n尋找顆粒、水漬、或圖案損傷。', action:'確認污染位置'},
+      {title:'光罩清潔（或更換）', desc:'輕微污染：使用 DI water + 氮氣吹淨。\n嚴重污染：送回光罩廠重新清潔或更換。', action:'清潔/更換完成'},
+      {title:'裝回並執行對準', desc:'裝回光罩，執行 reticle alignment，\n確認套刻誤差在規格內後恢復生產。', action:'對準完成'},
     ]
   },
   // 載台位置誤差（SECOM stage_error）
@@ -1269,10 +1602,10 @@ var MAINT_SOP = {
     triggerMeshes: ['Wafer_Chuck','Stage_Base','Wafer'],
     fault_api: 'stage_error',
     steps: [
-      {title:'確認 Overlay 數值', desc:'在 HMI CDU 面板查看 Overlay X/Y 3σ 值，\\n超過 4 nm 時需介入。', action:'確認 Overlay 數值'},
-      {title:'執行載台校正', desc:'啟動 stage calibration routine，\\n系統自動量測 interferometer 讀值並補償。', action:'執行 Cal Routine'},
-      {title:'檢查氣浮軸承', desc:'確認載台氣浮壓力正常（0.4–0.6 MPa），\\n氣壓不足會導致載台摩擦增加。', action:'確認氣浮壓力'},
-      {title:'確認 Overlay 改善', desc:'重新曝光測試片，量測 Overlay，\\n確認 X/Y 3σ < 2 nm 後恢復量產。', action:'Overlay 合格'},
+      {title:'確認 Overlay 數值', desc:'在 HMI CDU 面板查看 Overlay X/Y 3σ 值，\n超過 4 nm 時需介入。', action:'確認 Overlay 數值'},
+      {title:'執行載台校正', desc:'啟動 stage calibration routine，\n系統自動量測 interferometer 讀值並補償。', action:'執行 Cal Routine'},
+      {title:'檢查氣浮軸承', desc:'確認載台氣浮壓力正常（0.4–0.6 MPa），\n氣壓不足會導致載台摩擦增加。', action:'確認氣浮壓力'},
+      {title:'確認 Overlay 改善', desc:'重新曝光測試片，量測 Overlay，\n確認 X/Y 3σ < 2 nm 後恢復量產。', action:'Overlay 合格'},
     ]
   },
   // 劑量漂移（SECOM dose_drift）
@@ -1282,10 +1615,10 @@ var MAINT_SOP = {
     triggerMeshes: ['Laser_Box','Laser_Out','Laser_Vent'],
     fault_api: 'dose_drift',
     steps: [
-      {title:'確認劑量讀值', desc:'查看 HMI 的 Dose sensor 讀值與設定值的差異，\\n> 1% 偏差即需介入。', action:'確認偏差量'},
-      {title:'執行劑量校正', desc:'執行 dose calibration，系統自動調整\\n雷射電壓補償能量衰減。', action:'執行校正'},
-      {title:'清潔劑量感測器', desc:'雷射出口附近的 dose sensor 玻璃窗\\n可能有污染，用 IPA 輕拭後重新校正。', action:'清潔完成'},
-      {title:'確認穩定性', desc:'連續量測 10 次劑量值，\\n確認 CV（變異係數）< 0.3%。', action:'確認穩定'},
+      {title:'確認劑量讀值', desc:'查看 HMI 的 Dose sensor 讀值與設定值的差異，\n> 1% 偏差即需介入。', action:'確認偏差量'},
+      {title:'執行劑量校正', desc:'執行 dose calibration，系統自動調整\n雷射電壓補償能量衰減。', action:'執行校正'},
+      {title:'清潔劑量感測器', desc:'雷射出口附近的 dose sensor 玻璃窗\n可能有污染，用 IPA 輕拭後重新校正。', action:'清潔完成'},
+      {title:'確認穩定性', desc:'連續量測 10 次劑量值，\n確認 CV（變異係數）< 0.3%。', action:'確認穩定'},
     ]
   },
   // 焦距漂移（SECOM focus_drift）
@@ -1295,10 +1628,10 @@ var MAINT_SOP = {
     triggerMeshes: ['Illum_Barrel','Label_Illum'],
     fault_api: 'focus_drift',
     steps: [
-      {title:'確認焦距漂移量', desc:'查看 HMI CDU 面板的 Focus Drift 值，\\n> 30 nm 時會顯著影響 CD。', action:'確認漂移量'},
-      {title:'執行 Focus 校正', desc:'使用 ALS（Aerial Latent Scrutiny）測試片\\n量測實際最佳焦距，更新補償參數。', action:'執行校正'},
-      {title:'查看鏡片溫升', desc:'在 CDU 面板確認各鏡片元件溫升，\\n若 PL1–PL3 溫升 > 1.5 K 表示熱效應顯著。', action:'確認溫升'},
-      {title:'等待熱穩定或調降劑量', desc:'等待鏡片熱平衡（約 15 min），\\n或降低 Dose 減緩熱漂移。', action:'確認焦距穩定'},
+      {title:'確認焦距漂移量', desc:'查看 HMI CDU 面板的 Focus Drift 值，\n> 30 nm 時會顯著影響 CD。', action:'確認漂移量'},
+      {title:'執行 Focus 校正', desc:'使用 ALS（Aerial Latent Scrutiny）測試片\n量測實際最佳焦距，更新補償參數。', action:'執行校正'},
+      {title:'查看鏡片溫升', desc:'在 CDU 面板確認各鏡片元件溫升，\n若 PL1–PL3 溫升 > 1.5 K 表示熱效應顯著。', action:'確認溫升'},
+      {title:'等待熱穩定或調降劑量', desc:'等待鏡片熱平衡（約 15 min），\n或降低 Dose 減緩熱漂移。', action:'確認焦距穩定'},
     ]
   }
 };
@@ -1329,70 +1662,30 @@ function openMaintenance(faultType){
   maintOpen=true; _maintFaultType=faultType; _maintStepIdx=0; _maintDone=false;
   controls.unlock();
   document.getElementById('maint-overlay').style.display='flex';
-  document.getElementById('maint-hdr-title').textContent='🔧 '+sop.title;
+  document.getElementById('maint-hdr-title').textContent='⚠ 故障警報：'+sop.title;
   document.getElementById('maint-hdr-sub').textContent=sop.subtitle;
   document.getElementById('maint-fault-label').textContent='故障類型：'+faultType;
   document.getElementById('maint-complete').style.display='none';
-  renderMaintSteps(sop, 0);
+  document.getElementById('maint-prog-bar').style.width='0%';
+  document.getElementById('maint-prog-text').textContent='進行中...';
+  document.getElementById('maint-steps').innerHTML=
+    '<div style="padding:16px 12px;color:#8ab;font-size:12px;line-height:1.8;">'
+    +'請靠近相關零件並按 <b style="color:#ffa500;">[E]</b> 互動，<br>'
+    +'自行判斷處理順序。<br><br>'
+    +'<span style="color:#5a7a5a;font-size:11px;">▸ 橘色發光的零件是故障相關區域<br>'
+    +'▸ 可按 <b>[C]</b> 與 AI 學長對話<br>'
+    +'▸「求助學長」可獲得提示（-5分）</span></div>';
+  document.getElementById('hint-btn').disabled=false;
+  addMsg('sys','⚠ 偵測到故障：<b>'+sop.title+'</b>。請自行判斷處理步驟。');
 }
 window.openMaintenance=openMaintenance;
 
-function renderMaintSteps(sop, currentIdx){
-  var total=sop.steps.length;
-  document.getElementById('maint-prog-bar').style.width=(currentIdx/total*100)+'%';
-  document.getElementById('maint-prog-text').textContent='步驟 '+currentIdx+' / '+total;
-  var html='';
-  sop.steps.forEach(function(step,i){
-    var cls='maint-step';
-    if(i<currentIdx) cls+=' done';
-    else if(i===currentIdx) cls+=' active';
-    else cls+=' locked';
-    var icon = i<currentIdx?'✅':i===currentIdx?'▶':'⬜';
-    html+='<div class="'+cls+'" onclick="maintStepClick('+i+')">';
-    html+='<div class="maint-step-no">'+icon+'</div>';
-    html+='<div class="maint-step-info">';
-    html+='<div class="maint-step-title">Step '+(i+1)+': '+step.title+'</div>';
-    html+='<div class="maint-step-desc">'+step.desc.replace(/\\n/g,'<br>')+'</div>';
-    if(i===currentIdx){
-      html+='<div class="maint-step-action"><button class="maint-action-btn" '
-        +'onclick="maintExecStep(event,'+i+')">⚙ '+step.action+'</button></div>';
-    }
-    html+='</div></div>';
-  });
-  document.getElementById('maint-steps').innerHTML=html;
+function updateFaultProgress(current,total){
+  var pct=total>0?Math.round(current/total*100):0;
+  document.getElementById('maint-prog-bar').style.width=pct+'%';
+  document.getElementById('maint-prog-text').textContent='步驟 '+current+' / '+total;
+  document.getElementById('fault-prog').textContent=current+'/'+total+' 完成';
 }
-
-function maintStepClick(i){
-  // 只允許點當前步驟
-  if(i!==_maintStepIdx) return;
-}
-
-function maintExecStep(evt, i){
-  evt.stopPropagation();
-  var sop=MAINT_SOP[_maintFaultType]; if(!sop) return;
-  _maintStepIdx=i+1;
-  if(_maintStepIdx>=sop.steps.length){
-    // 全部完成
-    _maintDone=true;
-    document.getElementById('maint-prog-bar').style.width='100%';
-    document.getElementById('maint-prog-text').textContent='步驟 '+sop.steps.length+' / '+sop.steps.length;
-    document.getElementById('maint-steps').innerHTML='';
-    document.getElementById('maint-complete').style.display='block';
-    // 呼叫 API 清除 SECOM 故障
-    if(sop.fault_api){
-      fetch('/api/fault',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({type:null})});
-    }
-    clearActiveFault(_maintFaultType);
-    addMsg('sys','✅ <b>'+sop.title+'</b> 維修完成，系統恢復正常。');
-    // 2 秒後自動關閉
-    setTimeout(function(){if(maintOpen)closeMaintenance();},2500);
-  } else {
-    renderMaintSteps(sop, _maintStepIdx);
-    addMsg('sys','🔧 維修進度：'+sop.steps[i].title+' — 完成');
-  }
-}
-window.maintExecStep=maintExecStep;
 
 function closeMaintenance(){
   maintOpen=false;
@@ -1577,8 +1870,6 @@ var $hmiContent=document.getElementById('hmi-content');
 // ── Chat ──────────────────────────────────────────────────────────────────────
 // AI 訊息中的故障關鍵字 → 自動 setActiveFault
 var _FAULT_KEYWORDS={
-  vacuum_abnormal:['真空系統','vacuum','真空壓力','接頭','閥門','洩漏'],
-  cooling_water:['冷卻水','cooling water','流量','水溫','immersion'],
   lens_hotspot:['鏡片過熱','lens hot','鏡片溫度','熱膨脹'],
   contamination:['光罩污染','reticle contamination','污染','contamination'],
   stage_error:['載台誤差','stage error','overlay 超規','overlay超規'],
@@ -1627,19 +1918,64 @@ function openInspect(label,action){
   document.getElementById('inspect-title').textContent='🔍 '+label;
   document.getElementById('inspect-desc').textContent=DESC[label]||'請進一步檢查此子系統的運作狀態。';
   var $ia=document.getElementById('inspect-actions');$ia.innerHTML='';
-  var acts=QUICK_ACTIONS[label]||[action];
-  acts.forEach(function(a){
-    var btn=document.createElement('button');btn.className='qbtn';btn.textContent='▶ '+a;
-    btn.onclick=function(){sendChat(a);closeInspect();};$ia.appendChild(btn);
-  });
-  var ask=document.createElement('button');ask.className='qbtn';
-  ask.textContent='💬 學長，這個部件狀態如何？';
-  ask.onclick=function(){sendChat('學長，'+label+'目前狀態如何？');closeInspect();};
-  $ia.appendChild(ask);
+  var acts=COMPONENT_ACTIONS[label]||{inspect:[action],operate:[]};
+  if(acts.inspect&&acts.inspect.length>0){
+    var h1=document.createElement('div');h1.className='action-sec action-sec-inspect';
+    h1.textContent='🔍 檢查';$ia.appendChild(h1);
+    acts.inspect.forEach(function(a){
+      var btn=document.createElement('button');btn.className='qbtn';btn.textContent=a;
+      btn.onclick=function(){sendAction(label,a);closeInspect();};$ia.appendChild(btn);
+    });
+  }
+  if(acts.operate&&acts.operate.length>0){
+    var h2=document.createElement('div');h2.className='action-sec action-sec-operate';
+    h2.textContent='⚙ 操作';$ia.appendChild(h2);
+    acts.operate.forEach(function(a){
+      var btn=document.createElement('button');btn.className='qbtn qbtn-operate';btn.textContent=a;
+      btn.onclick=function(){sendAction(label,a);closeInspect();};$ia.appendChild(btn);
+    });
+  }
 }
 function closeInspect(){
   inspecting=false;$ip.style.display='none';
   if(gameStarted&&!hmiOpen)controls.lock();
+}
+function sendAction(component,action){
+  if(!gameStarted)return;
+  addMsg('user','['+component+'] '+action);
+  var faultType=Object.keys(_activeFaults)[0]||null;
+  fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({component:component,action:action,fault_type:faultType})
+  }).then(function(r){return r.json();}).then(function(d){
+    if(d.feedback)addMsg('ai',d.feedback);
+    if(d.score!==undefined)updateScore(d.score);
+    if(d.all_done){
+      clearActiveFault(faultType);
+      if(maintOpen)closeMaintenance();
+      document.getElementById('hint-btn').disabled=true;
+      document.getElementById('fault-prog').textContent='—';
+    }else if(d.step_done){
+      updateFaultProgress(d.current_step,d.total_steps);
+    }
+    if(d.no_fault)sendChat('['+component+'] '+action);
+  }).catch(function(){addMsg('sys','⚠ 連線錯誤');});
+}
+function askHint(){
+  if(!gameStarted)return;
+  var faultType=Object.keys(_activeFaults)[0]||null;
+  fetch('/api/hint',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({fault_type:faultType})
+  }).then(function(r){return r.json();}).then(function(d){
+    if(d.hint)addMsg('ai','💡 '+d.hint);
+    if(d.score!==undefined)updateScore(d.score);
+    if(d.current_step!==undefined&&d.total_steps)
+      updateFaultProgress(d.current_step,d.total_steps);
+  }).catch(function(){addMsg('sys','⚠ 連線錯誤');});
+}
+function updateScore(score){
+  var el=document.getElementById('score-val');
+  el.textContent='分數：'+score;
+  el.style.color=score>=80?'#4fc':score>=60?'#ffa500':'#f44';
 }
 
 // ── HMI Overlay ───────────────────────────────────────────────────────────────
@@ -1974,6 +2310,8 @@ document.getElementById('start-btn').addEventListener('click',function(){
   // 立即設定遊戲場景（同步），讓 controls.lock() 能在 user gesture 內執行
   gameStarted=true;
   insideMode=false;
+  _labelSprites.forEach(function(s){s.visible=false;});
+  _outlineMeshes.forEach(function(o){o.visible=false;});
   if(typeof exteriorShell!=='undefined') exteriorShell.visible=true;
   if(glbModel) glbModel.visible=false;
   camera.position.set(_sCX, 1.6, _sCZ+_sD/2+3.0);
@@ -2033,7 +2371,16 @@ document.addEventListener('keydown',function(e){
           var sop=MAINT_SOP[ft];
           if(sop&&sop.triggerMeshes.indexOf(hoveredObj.name)!==-1) _faultForMesh=ft;
         });
-        if(_faultForMesh){openMaintenance(_faultForMesh);break;}
+        if(_faultForMesh){
+          // 故障觸發 mesh → 開啟零件互動面板（讓操作者自行判斷操作）
+          var _fInf=getInfo(hoveredObj);
+          if(_fInf&&_fInf.label!=='控制系統'&&_fInf.label!=='HMI 控制面板'){
+            openInspect(_fInf.label,_fInf.action);
+          } else {
+            openMaintenance(_faultForMesh);
+          }
+          break;
+        }
         if(hoveredObj.name==='HMI_Screen'){showHMIOverlay();break;}
         var inf=getInfo(hoveredObj);
         if(inf){
@@ -2092,8 +2439,123 @@ var sceneMeshMap={};
 var beamPtLight=null;
 var procElapsed=0;
 
+// ── DOM 標籤系統（瀏覽器原生字型渲染，完全清晰）────────────────────────────────
+var _LABEL_TEXT={
+  'Label_Stage':    'Wafer Stage',
+  'Label_POB':      'Projection Optics',
+  'Label_Illum':    'Illumination System',
+  'Label_Laser':    '193nm ArF DUV Laser',
+  'Label_Immersion':'Immersion Hood',
+  'Label_FOUP':     'FOUP Port',
+  'Label_Beam':     'Beam Path',
+  'Model_Label':    'ASML TWINSCAN NXT:870  |  193nm ArF Immersion'
+};
+
+var _labelSprites=[];  // [{div, worldPos}]
+
+// 每個標籤的世界座標偏移 [dx, dy, dz]，避免擋住零件和動畫
+// dx=左右, dy=上下, dz=前後（正值靠近觀察者）
+var _LABEL_OFFSET={
+  'Label_Stage':    [ 0,    0.05,  0],
+  'Label_POB':      [ 0,    0.08,  0],
+  'Label_Illum':    [ 0.28, 0.08,  0],   // 右移但不太遠
+  'Label_Laser':    [ 0,    0.08,  0],
+  'Label_Immersion':[ 0,    0.08,  0],
+  'Label_FOUP':     [-0.30, 0.08,  0],   // 往左，不擋 FOUP 本體
+  'Label_Beam':     [ 0,    0.08,  0],
+  'Model_Label':    [ 0,    0,     0],
+};
+
+function _refreshLabels(meshMap){
+  _labelSprites.forEach(function(item){item.div.remove();});
+  _labelSprites=[];
+  var layer=document.getElementById('label-layer');
+  Object.keys(_LABEL_TEXT).forEach(function(nm){
+    var node=meshMap[nm]; if(!node) return;
+    node.visible=false;
+    var wp=new THREE.Vector3();
+    node.getWorldPosition(wp);
+    // 套用偏移
+    var off=_LABEL_OFFSET[nm]||[0,0,0];
+    wp.x+=off[0]; wp.y+=off[1]; wp.z+=off[2];
+    var div=document.createElement('div');
+    var isTitle=(nm==='Model_Label');
+    div.className=isTitle?'eq-label-title':'eq-label';
+    div.textContent=_LABEL_TEXT[nm];
+    layer.appendChild(div);
+    _labelSprites.push({div:div, pos:wp, title:isTitle});
+  });
+}
+
+// 每幀把 3D 座標投影成螢幕座標
+var _proj=new THREE.Vector3();
+function _updateLabelPositions(){
+  var show=insideMode&&gameStarted;
+  _labelSprites.forEach(function(item){
+    if(!show){item.div.style.display='none';return;}
+    // 標題固定在畫面頂部，不跟隨 3D 座標
+    if(item.title){item.div.style.display='block';return;}
+    _proj.copy(item.pos).project(camera);
+    if(_proj.z>1){item.div.style.display='none';return;}
+    var sx=( _proj.x*0.5+0.5)*CW;
+    var sy=(-_proj.y*0.5+0.5)*CH;
+    item.div.style.display='block';
+    item.div.style.left=sx+'px';
+    item.div.style.top=sy+'px';
+  });
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 互動設備群組（同一動作的所有 mesh 合為一組，只建一次 outline）
+var _INTERACT_GROUPS=[
+  ['Reticle_Stage_Mesh','Reticle_Mesh'],
+  ['Robot_Arm_Link_Mesh','Robot_Arm_Base'],
+  ['Stage_Base','Rail_-0.6','Rail_0.0','Rail_0.6','Wafer_Chuck','Wafer'],
+  ['POB_Barrel','POB_Top_Cap','POB_Bottom'],
+  ['Illum_Barrel'],
+  ['Laser_Box','Laser_Vent','Laser_Out'],
+  ['Immersion_Hood','Immersion_Supply','Immersion_Return'],
+  ['Cabinet_Main','Cabinet_Panel','Screen','Keyboard'],
+  ['FOUP_Port','FOUP_Door'],
+];
+
+var _outlineMeshes=[];  // 所有 outline mesh，供 enterInterior 切換
+
+function _buildOutlines(meshMap){
+  try{
+    var outMat=new THREE.MeshBasicMaterial({
+      color:0xffffff,side:THREE.BackSide,
+      transparent:true,opacity:0.50,depthWrite:false
+    });
+    // 先收集，traverse 完再 add，避免修改正在遍歷的 scene graph
+    var _pairs=[];
+    _INTERACT_GROUPS.forEach(function(group){
+      group.forEach(function(nm){
+        var node=meshMap[nm]; if(!node) return;
+        node.traverse(function(o){
+          if(!o.isMesh||!o.geometry) return;
+          _pairs.push(o);
+        });
+      });
+    });
+    _pairs.forEach(function(o){
+      try{
+        var ol=new THREE.Mesh(o.geometry,outMat.clone());
+        ol.scale.setScalar(1.06);
+        ol.renderOrder=5;
+        ol.visible=false;
+        o.add(ol);
+        _outlineMeshes.push(ol);
+      }catch(e){}
+    });
+    console.log('[OK] outlines built:',_outlineMeshes.length);
+  }catch(e){console.warn('[outline] error:',e);}
+}
+
 function createProcObjects(model){
   model.traverse(function(o){if(o.name)sceneMeshMap[o.name]=o;});
+  _refreshLabels(sceneMeshMap);  // 重新渲染所有標籤
+  _buildOutlines(sceneMeshMap);  // 建立互動設備白框
 
   // ── 玻璃外框擴展，容納照明系統與雷射元件（sceneMeshMap 已填充）────────────
   (function(){
@@ -2354,6 +2816,17 @@ function createProcObjects(model){
       scene.add(lzRiseAllMesh); procObjs.lzBarrelThrough=lzRiseAllMesh;
       console.log('[OK] lzRiseAll x='+barrelCX.toFixed(3)+' y='+lzBoxY.toFixed(3)+'~'+barrelExitY.toFixed(3));
     }
+
+    // ── 光路方向箭頭 (ArrowHelper, depthTest:false, 流動式) ──
+    procObjs.photonWP=[
+      new THREE.Vector3(lzStartX, lzBoxY, barrelCZ),        // P0: 雷射射出點
+      new THREE.Vector3(barrelCX,  lzBoxY, barrelCZ),        // P1: 彎折鏡
+      new THREE.Vector3(barrelCX,  barrelExitY, barrelCZ),   // P2: 照明系統出口
+      // P3 在 rsCX 確定後 push
+    ];
+    procObjs.barrelCX=barrelCX; procObjs.barrelCZ=barrelCZ;
+    // 先建好 photons 陣列（ArrowHelper 在 P3 push 後才建立）
+    procObjs.photons=[];
   }
 
   // ── 掃描曝光光束（細線，跟隨 chuck 位置動畫） ────────────────────────────────
@@ -2364,8 +2837,36 @@ function createProcObjects(model){
   var beamCyl=new THREE.Mesh(new THREE.CylinderGeometry(.012,.005,beamH,8),uvMat.clone());
   beamCyl.position.set(rsCX,beamMidY,rsCZ);beamCyl.visible=false; // 由 GLB Beam_V2 負責，此自訂桶永久隱藏
   scene.add(beamCyl);procObjs.beamCyl=beamCyl;
-  procObjs.beamMidY=beamMidY;procObjs.beamTop=beamTop;
+  procObjs.beamMidY=beamMidY;procObjs.beamTop=beamTop;procObjs.beamBot=beamBot;
   procObjs.rsCX=rsCX;procObjs.rsCZ=rsCZ;
+  // 補全 waypoints：P2.5（照明出口→投影鏡頂水平段）+ P3（晶圓）
+  if(procObjs.photonWP){
+    var _wp2=procObjs.photonWP;
+    var _p2=_wp2[2]; // (barrelCX, barrelExitY, barrelCZ)
+    // P2.5：同高度水平移到投影鏡正上方（rsY 是光罩載台頂，再往上一點是 POB 入口）
+    var _pobEntryY=Math.max(_p2.y, rsY+0.05);
+    _wp2.push(new THREE.Vector3(rsCX, _pobEntryY, rsCZ));
+    // P3：投影鏡正下方晶圓
+    _wp2.push(new THREE.Vector3(rsCX, chuckW.y+0.04, rsCZ));
+    // 建立流動式 ArrowHelper（depthTest:false）
+    var _NPER2=6;
+    var _aLen=0.18, _aHL=0.09, _aHW=0.06;
+    for(var _si2=0;_si2<_wp2.length-1;_si2++){
+      var _from2=_wp2[_si2], _to2=_wp2[_si2+1];
+      if(_from2.distanceTo(_to2)<0.01) continue; // 跳過零長度段
+      var _dir2=new THREE.Vector3().subVectors(_to2,_from2).normalize();
+      for(var _ai=0;_ai<_NPER2;_ai++){
+        var _arr=new THREE.ArrowHelper(_dir2,_from2.clone(),_aLen,0xff00ff,_aHL,_aHW);
+        _arr.line.material.transparent=true; _arr.line.material.depthTest=false; _arr.line.material.opacity=0;
+        _arr.cone.material.transparent=true; _arr.cone.material.depthTest=false; _arr.cone.material.opacity=0;
+        _arr.line.renderOrder=999; _arr.cone.renderOrder=999; _arr.renderOrder=999;
+        _arr.visible=false;
+        _arr.userData={seg:_si2, off:_ai/_NPER2};
+        scene.add(_arr);
+        procObjs.photons.push(_arr);
+      }
+    }
+  }
 
   // 光罩光暈
   var reticlGlow=new THREE.Mesh(new THREE.CircleGeometry(.14,32),glowMat.clone());
@@ -2571,6 +3072,30 @@ function updateProcessAnim(dt){
     procObjs.rm.position.y=rmY;
     procObjs.rmMarks.forEach(function(m){m.position.y=rmY+0.003;});
   }
+
+  // ── ArrowHelper 流動動畫（depthTest:false，直接顯示在光束上方）──────────────
+  if(procObjs.photons&&procObjs.photons.length>0&&procObjs.photonWP&&procObjs.photonWP.length>=4){
+    var _wp=procObjs.photonWP;
+    var _speed=exposing?2.0:0.7;
+    var _maxOp=exposing?0.95:0.6;
+    procObjs.photons.forEach(function(_arr){
+      var _ud=_arr.userData;
+      if(!laserOn){_arr.visible=false;return;}
+      var _p=(( t*_speed+_ud.off)%1.0);
+      _arr.visible=true;
+      _arr.position.lerpVectors(_wp[_ud.seg],_wp[_ud.seg+1],_p);
+      // 頭尾稍微淡出，中段全亮
+      var _fade=Math.sin(_p*Math.PI)*0.7+0.3;
+      var _op=_maxOp*_fade;
+      _arr.line.material.opacity=_op;
+      _arr.cone.material.opacity=_op;
+      // 曝光時縮放脈衝
+      var _s=exposing?(1.0+0.3*Math.sin(t*Math.PI*6+_ud.off*10)):1.0;
+      _arr.scale.setScalar(_s);
+    });
+  } else if(procObjs.photons){
+    procObjs.photons.forEach(function(_arr){_arr.visible=false;});
+  }
 }
 
 // ── Render loop ───────────────────────────────────────────────────────────────
@@ -2638,6 +3163,7 @@ function animate(){
     }
   }
   renderer.render(scene,camera);
+  _updateLabelPositions();
 }
 animate();
 
@@ -2660,6 +3186,10 @@ window.addEventListener('resize',function(){
 
 def _write_viewer_html(static_dir: Path) -> None:
     out = static_dir / "viewer.html"
+    # 若 static/viewer.html 已存在，保留手動修改版本，不覆蓋
+    if out.exists():
+        print(f"[OK] viewer.html 從 {out}")
+        return
     safe = _VIEWER_HTML.encode("utf-16-le", "surrogatepass").decode("utf-16-le")
     out.write_text(safe, encoding="utf-8")
     print(f"[OK] viewer.html → {out}")

@@ -161,21 +161,35 @@ class SimulationTrainingSystem:
         else:
             self.ai_advisor.reset()
 
-        # 生成警報訊息（使用主動提示學長）
+        # 重置 ProactiveMentor 本次學習狀態（避免上次難度/分數殘留）
         if self.proactive_mentor:
-            # 使用主動提示學長生成詳細告警
+            self.proactive_mentor.reset_session()
+
+        # 生成警報訊息（使用主動提示學長）
+        # 從 scenario_type 推導 root_cause（兩個 key 都對應起來）
+        _SCENARIO_TO_ROOT = {
+            "alignment_drift":       ("對準系統漂移", "alignment"),
+            "optical_contamination": ("光學污染", "lens_contamination"),
+            "power_fluctuation":     ("電源電壓波動", "alignment"),
+            "cooling_failure":       ("冷卻流量不足", "cooling_flow"),
+            "vacuum_leak":           ("真空洩漏", "vacuum_leak"),
+            "filter_clogged":        ("濾網堵塞", "cooling_flow"),
+        }
+        stype = scenario_info.get('scenario_type', '')
+        _ft, _rc = _SCENARIO_TO_ROOT.get(stype, ('設備異常', 'unknown'))
+
+        if self.proactive_mentor:
             proactive_alert = self.proactive_mentor.generate_fault_alert(
                 fault_info={
-                    'fault_type': scenario_info.get('fault_type', '未知故障'),
-                    'root_cause': scenario_info.get('root_cause', 'unknown'),
-                    'severity': scenario_info.get('severity', 'medium'),
+                    'fault_type': _ft,
+                    'root_cause': _rc,
+                    'severity': 'medium',
                     'scenario_name': scenario_info.get('scenario_name', '')
                 },
                 current_state=scenario_info["initial_state"]
             )
             alarm_message = proactive_alert
         else:
-            # 使用原始告警訊息
             alarm_message = scenario_info["alarm_message"]
 
         # 生成初始介面
@@ -186,15 +200,10 @@ class SimulationTrainingSystem:
         # 初始系統訊息加入對話歷史
         initial_message = f"""{alarm_message}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-你是現場工程師，請開始處理故障！
-
-💬 你可以：
-  • 執行診斷動作：「檢查冷卻水流量」
-  • 詢問專業術語：「什麼是overlay？」「熱膨脹是什麼意思？」
-  • 請教學長：「學長，這個該怎麼處理？」
-
-請開始你的操作..."""
+━━━━━━━━━━━━━━━━━━━━
+💬 【問答模式】請先回答上面學長的問題
+🔧 【操作模式】回答完後，在 3D 環境靠近部件按 E 進行實際操作
+━━━━━━━━━━━━━━━━━━━━"""
 
         self.conversation_history.append({
             "role": "assistant",
@@ -227,17 +236,29 @@ class SimulationTrainingSystem:
         # 記錄時間
         timestamp = datetime.now().strftime("%H:%M:%S")
 
-        # ===== 智能模式切換：檢測理論問題 =====
-        if self.qa_assistant and self.qa_assistant.is_theory_question(user_input):
-            # 切換到學習模式
-            return self._handle_theory_question(
+        # ===== 優先攔截：待回答的反問（最高優先，不被 NLU / theory 搶走）=====
+        if self.pending_follow_up:
+            # closing_reflection 型別：用 ProactiveMentor 評分邏輯處理
+            if isinstance(self.pending_follow_up, dict) and \
+                    self.pending_follow_up.get('type') == 'closing_reflection':
+                return self._handle_closing_reflection(
+                    user_input, timestamp, equipment_html, dashboard_html,
+                    equipment_status_html, conversation_history, action_log
+                )
+            return self._handle_follow_up_answer(
                 user_input, timestamp, equipment_html, dashboard_html,
                 equipment_status_html, conversation_history, action_log
             )
 
-        # ===== 檢查是否在回答反問問題 =====
-        if self.pending_follow_up:
-            return self._handle_follow_up_answer(
+        if self.proactive_mentor and self.proactive_mentor.pending_followup:
+            return self._handle_proactive_followup_answer(
+                user_input, timestamp, equipment_html, dashboard_html,
+                equipment_status_html, conversation_history, action_log
+            )
+
+        # ===== 智能模式切換：檢測理論問題（反問都處理完才走這裡）=====
+        if self.qa_assistant and self.qa_assistant.is_theory_question(user_input):
+            return self._handle_theory_question(
                 user_input, timestamp, equipment_html, dashboard_html,
                 equipment_status_html, conversation_history, action_log
             )
@@ -428,6 +449,7 @@ class SimulationTrainingSystem:
             )
 
         return expert_response
+
 
     def _handle_theory_question(self, user_input: str, timestamp: str,
                                 equipment_html: str, dashboard_html: str,
@@ -801,6 +823,130 @@ class SimulationTrainingSystem:
 
         return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
 
+    def _handle_closing_reflection(self, user_input: str, timestamp: str,
+                                    equipment_html: str, dashboard_html: str,
+                                    equipment_status_html: str,
+                                    conversation_history: list,
+                                    action_log: str) -> Tuple[str, str, str, str, list, str]:
+        """
+        處理故障結束後的反思問題回答，用 ProactiveMentor 評分後給最終結語。
+        """
+        followup_info = self.pending_follow_up
+        self.pending_follow_up = None  # 清掉，不再攔截
+
+        fault_type = followup_info.get('fault_type', '')
+        question   = followup_info.get('question', '')
+
+        _CLOSING_KEYWORDS = {
+            # SOP_DEFINITIONS keys
+            'stage_error':   ['overlay', '疊對', '良率', '短路', '斷路', '偏移', '精度', '對準', '製程'],
+            'contamination': ['劑量', '曝光', '光阻', 'CD', '線寬', '圖案', '穿透率', '污染', '預防'],
+            'lens_hotspot':  ['熱膨脹', '折射率', '溫度', '焦點', '解析度', '曝光', '品質'],
+            'dose_drift':    ['劑量', '光阻', '曝光量', '閾值', '線寬', 'CD', '良率'],
+            'focus_drift':   ['焦距', '解析度', '製程視窗', '焦點', 'DOF', '對焦', '景深'],
+        }
+        _CLOSING_EXPL = {
+            'stage_error':   'Overlay 是核心影響：上下層對不準→金屬層短路或 via 斷路→良率下降。DUV 要求 <3~5nm。',
+            'contamination': '光強不足→劑量不夠→光阻反應不完全→CD偏大→圖案不清晰→良率受損。預防：定期清潔保養。',
+            'lens_hotspot':  '溫升→熱膨脹+折射率改變→焦點漂移+對準偏移→解析度下降→製程良率受損。',
+            'dose_drift':    '劑量偏高→光阻過度曝光→線寬縮小；劑量偏低→圖案不清晰→CD超規→良率下降。',
+            'focus_drift':   '焦距漂移超出景深(DOF)→解析度下降→製程視窗縮窄→圖案邊緣模糊→良率受損。',
+        }
+        keywords = _CLOSING_KEYWORDS.get(fault_type, ['原因', '影響', '系統', '處理'])
+        explanation = _CLOSING_EXPL.get(fault_type, '系統性排查：症狀→根因→處置。')
+        score = self._quick_score(user_input, keywords)
+
+        # 用 ProactiveMentor LLM 生成個人化回饋
+        if self.proactive_mentor:
+            tmp_followup = {
+                'question': question,
+                'term_name': fault_type,
+                'answer_keywords': keywords,
+                'correct_explanation': explanation,
+                'socratic_followup': {}
+            }
+            feedback = self.proactive_mentor._generate_followup_feedback(
+                score=score,
+                followup=tmp_followup,
+                user_answer=user_input
+            )
+        else:
+            if score >= 7:
+                feedback = "分析得很好！這次訓練到此結束，你對這個故障的理解相當紮實。"
+            elif score >= 4:
+                feedback = f"方向對了。補充一下：{explanation}\n\n記住核心影響鏈，下次更順手。"
+            else:
+                feedback = f"沒關係，這次先把流程走過一遍。核心概念：{explanation}\n\n繼續努力！"
+
+        action_log += f"\n[{timestamp}] [反思評估] 情境結束"
+        self.session_active = False  # 正式結束情境，不再接受操作輸入
+        self.conversation_history.extend([
+            {"role": "user",      "content": user_input},
+            {"role": "assistant", "content": feedback},
+            {"role": "sys_status", "content": "✅ 本次訓練情境結束。"},
+        ])
+        return "", equipment_html, dashboard_html, equipment_status_html, self.conversation_history, action_log
+
+    def _quick_score(self, answer: str, keywords: list) -> int:
+        """快速關鍵字評分（0-10）"""
+        answer_lower = answer.lower()
+        matched = sum(1 for kw in keywords if kw.lower() in answer_lower)
+        if matched == 0:
+            return 1 if len(answer) > 5 else 0
+        return min(10, 4 + int((matched / len(keywords)) * 7)) if keywords else 5
+
+    def _handle_proactive_followup_answer(self, user_input: str, timestamp: str,
+                                          equipment_html: str, dashboard_html: str,
+                                          equipment_status_html: str,
+                                          conversation_history: list,
+                                          action_log: str) -> Tuple[str, str, str, str, list, str]:
+        """
+        處理主動告警反問的回答，使用 proactive_mentor 評估並自適應難度。
+        """
+        try:
+            result = self.proactive_mentor.evaluate_followup_answer(user_input)
+        except Exception as e:
+            print(f"[Error] evaluate_followup_answer 失敗: {e}")
+            conversation_history.extend([
+                {"role": "user", "content": user_input},
+                {"role": "assistant", "content": "好，我們繼續處理故障吧。"}
+            ])
+            return "", equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log
+        if not result:
+            conversation_history.extend([
+                {"role": "user", "content": user_input},
+                {"role": "assistant", "content": "好，繼續處理故障吧。"}
+            ])
+            return "", equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log
+
+        score = result['score']
+        feedback = result['feedback']
+        difficulty = result['difficulty']
+
+        # 將難度同步給 AI 學長的 LLM prompt
+        mode_map = {'challenge': 'challenge', 'standard': 'standard', 'easy': 'scaffolding'}
+        if self.use_ai_mentor and self.ai_mentor:
+            self.ai_mentor.set_teaching_mode(mode_map.get(difficulty, 'standard'))
+
+        # 難度標示（口語化）
+        difficulty_hint = {
+            'challenge': '（你理解得不錯，下次會問得更深一點）',
+            'standard': '',
+            'easy': '（沒關係，下次問簡單一點的）'
+        }.get(difficulty, '')
+
+        full_response = feedback
+        if difficulty_hint:
+            full_response += f"\n\n{difficulty_hint}"
+
+        action_log += f"\n[{timestamp}] [反問評估] 得分: {score}/10 | 難度調整為: {difficulty}"
+
+        conversation_history.extend([
+            {"role": "user", "content": user_input},
+            {"role": "assistant", "content": full_response}
+        ])
+        return "", equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log
+
     def _handle_follow_up_answer(self, user_input: str, timestamp: str,
                                  equipment_html: str, dashboard_html: str,
                                  equipment_status_html: str,
@@ -849,6 +995,18 @@ class SimulationTrainingSystem:
 2. 返回故障診斷
 
 （直接輸入診斷指令即可返回診斷模式）"""
+
+        # 根據評估結果同步自適應模式給 AI 學長
+        ul = evaluation.get('understanding_level', 'fair')
+        ul_to_mode = {
+            'excellent': 'challenge',
+            'good':      'challenge',
+            'fair':      'standard',
+            'poor':      'scaffolding',
+            'very_poor': 'remedial'
+        }
+        if self.use_ai_mentor and self.ai_mentor:
+            self.ai_mentor.set_teaching_mode(ul_to_mode.get(ul, 'standard'))
 
         # 清除待回答問題
         self.pending_follow_up = None
@@ -974,23 +1132,27 @@ class SimulationTrainingSystem:
             equipment_html = self._generate_equipment_diagram(new_state)
             dashboard_html = self._generate_dashboard(new_state)
 
-            # 添加演進訊息
+            # 添加演進訊息（系統狀態 / AI 評論分開儲存）
             progression_msg = progression_info["message"]
 
-            # AI 學長階段轉換評論
+            # 系統狀態單獨儲存（前端顯示在狀態視窗）
+            self.conversation_history.append({
+                "role": "sys_status",
+                "content": progression_msg
+            })
+
+            # AI 學長階段轉換評論單獨儲存（前端顯示在對話視窗）
             if self.use_ai_mentor:
                 mentor_comment = self.ai_mentor.provide_stage_transition_comment(
                     self.scenario_engine.get_scenario_info(),
                     progression_info.get("new_stage", 0),
                     progression_info.get("symptoms", [])
                 )
-                progression_msg += "\n\n" + mentor_comment
-
-            # 系統訊息加入對話歷史
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": progression_msg
-            })
+                if mentor_comment:
+                    self.conversation_history.append({
+                        "role": "assistant",
+                        "content": mentor_comment
+                    })
 
             # 更新日誌
             timestamp = now.strftime("%H:%M:%S")

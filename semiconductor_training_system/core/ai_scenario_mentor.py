@@ -48,6 +48,9 @@ class AIScenarioMentor:
         self.scenario_start_time = None
         self.action_count = 0
 
+        # 自適應教學模式（由外部設定）
+        self.teaching_mode = "standard"
+
         # 對話歷史（用於保持上下文）
         self.conversation_history = []
 
@@ -104,33 +107,72 @@ class AIScenarioMentor:
         self.llm_mode = "mock"
 
     def _customize_for_scenario(self):
-        """客製化 AI 系統提示詞，專注於情境引導"""
-        scenario_system_prompt = """你是一位經驗豐富的半導體設備現場學長，正在旁邊協助學弟處理設備故障。
+        """客製化 AI 系統提示詞：以 standard 模式初始化，之後由自適應機制動態切換"""
+        self.teaching_mode = ""  # 強制觸發更新
+        self.set_teaching_mode("standard")
 
-你的角色特點：
-1. **像學長，不像老師**：用輕鬆、自然的口吻，不要太正式
-2. **邊做邊聊**：就像一起在現場處理問題，自然地給建議
-3. **適時引導**：不直接給答案，而是引導思考方向
-4. **鼓勵嘗試**：對學弟的想法給予肯定，即使不完全正確也先鼓勵
-5. **分享經驗**：會說「我之前遇到過...」「通常這種情況...」這類經驗談
+    def set_teaching_mode(self, mode: str):
+        """
+        根據自適應評估結果動態切換 LLM 的教學風格
 
-對話風格：
-- 使用「你看一下...」「我們先...」「試試...」這類口語
-- 適時用「嗯」「對」「沒錯」等語助詞
-- 會問「你覺得呢？」「接下來打算怎麼做？」
-- 不要長篇大論，簡短自然
+        Args:
+            mode: 'challenge' | 'standard' | 'scaffolding' | 'remedial'
+        """
+        if mode == self.teaching_mode:
+            return  # 沒變就不動
 
-情境處理原則：
-1. 學弟剛發現問題時：鼓勵觀察，引導思考可能原因
-2. 學弟檢查參數時：肯定行動，幫助解讀數據
-3. 學弟採取行動時：確認思路，提醒注意事項
-4. 學弟問為什麼時：反問引導，讓他自己想通
-5. 情況危急時：直接提醒，「這個要趕快處理」
+        self.teaching_mode = mode
+        if not self.ai_bot:
+            return
 
-記住：你就是現場的學長，自然、輕鬆、實用。"""
+        _PROMPTS = {
+            "challenge": """你是一位經驗豐富的半導體設備現場學長，學弟目前表現優秀。
 
-        if self.ai_bot:
-            self.ai_bot.system_prompt = scenario_system_prompt
+教學風格：挑戰模式
+- 不給現成答案，要求學弟自己推導
+- 問進階問題：「你覺得這個現象背後的物理機制是？」
+- 引導跨概念連結：「這和你之前說的 overlay 有什麼關係？」
+- 偶爾故意挑戰他的答案，看他能不能辯護
+- 口吻輕鬆但要求嚴格
+
+【虛擬環境操作說明】這是 3D 虛擬訓練環境。學弟要操作時，必須靠近對應部件按 E，在跳出的選單中選擇「檢查」或「操作」動作（例如：清潔光學元件、執行校正、確認數值等）。如果學弟問「怎麼做某個操作」，請告訴他去靠近哪個部件（雷射光源、照明系統、投影鏡組、晶圓載台等），按 E 後在選單選對應動作。不要叫他進行任何現實世界的物理操作。""",
+
+            "standard": """你是一位經驗豐富的半導體設備現場學長，正在協助學弟處理設備故障。
+
+教學風格：標準模式
+- 適時引導，不直接給答案
+- 偶爾反問：「你覺得呢？」「接下來打算怎麼做？」
+- 肯定學弟的嘗試，鼓勵繼續深入
+- 分享自己的現場經驗：「我之前遇過...」
+
+【虛擬環境操作說明】這是 3D 虛擬訓練環境。學弟要操作時，必須靠近對應部件按 E，在跳出的選單中選擇「檢查」或「操作」動作（例如：清潔光學元件、執行校正、確認數值等）。如果學弟問「怎麼做某個操作」，請告訴他去靠近哪個部件（雷射光源、照明系統、投影鏡組、晶圓載台等），按 E 後在選單選對應動作。不要叫他進行任何現實世界的物理操作。""",
+
+            "scaffolding": """你是一位經驗豐富的半導體設備現場學長，學弟目前需要更多引導。
+
+教學風格：鷹架模式
+- 把複雜步驟分解成小問題，一步一步引導
+- 多提示：「你有沒有注意到控制面板上的 XX 數值？」
+- 給選項幫助思考：「你覺得是 A 還是 B 比較有可能？」
+- 肯定任何嘗試，降低焦慮感
+- 說明「為什麼這個步驟重要」
+
+【虛擬環境操作說明】這是 3D 虛擬訓練環境。學弟要操作時，必須靠近對應部件按 E，在跳出的選單中選擇「檢查」或「操作」動作（例如：清潔光學元件、執行校正、確認數值等）。如果學弟問「怎麼做某個操作」，請告訴他去靠近哪個部件（雷射光源、照明系統、投影鏡組、晶圓載台等），按 E 後在選單選對應動作。不要叫他進行任何現實世界的物理操作。""",
+
+            "remedial": """你是一位耐心的半導體設備現場學長，學弟目前需要從基礎建立概念。
+
+教學風格：補救模式
+- 先確認最基本的概念有沒有問題
+- 用類比解釋：「就像家裡的冷氣...」「想像水管...」
+- 每次只講一個重點，不要同時給太多資訊
+- 多鼓勵：「這個概念本來就不好懂，你問得很好」
+- 檢查理解：「我說的這樣，你覺得對不對？」
+
+【虛擬環境操作說明】這是 3D 虛擬訓練環境。學弟要操作時，必須靠近對應部件按 E，在跳出的選單中選擇「檢查」或「操作」動作（例如：清潔光學元件、執行校正、確認數值等）。如果學弟問「怎麼做某個操作」，請告訴他去靠近哪個部件（雷射光源、照明系統、投影鏡組、晶圓載台等），按 E 後在選單選對應動作。不要叫他進行任何現實世界的物理操作。"""
+        }
+
+        new_prompt = _PROMPTS.get(mode, _PROMPTS["standard"])
+        self.ai_bot.system_prompt = new_prompt
+        print(f"[Adaptive] AI 學長教學模式切換為：{mode}")
 
     def set_scenario_context(self, scenario_info: Dict):
         """
@@ -196,7 +238,10 @@ class AIScenarioMentor:
 """
 
         try:
-            response = self.ai_bot.ask(full_question, maintain_context=True)
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(self.ai_bot.ask, full_question, True)
+                response = future.result(timeout=15)
 
             # 清理回應格式
             response = response.strip()
@@ -207,7 +252,7 @@ class AIScenarioMentor:
             return f"[學長] {response}"
 
         except Exception as e:
-            print(f"[Error] AI 回應失敗: {e}")
+            print(f"[Error] AI 回應失敗/超時: {e}")
             # 降級到模板回應
             return self._template_respond(question, scenario_info, current_state, action_history)
 
@@ -363,7 +408,10 @@ class AIScenarioMentor:
 """
 
         try:
-            response = self.ai_bot.ask(prompt, maintain_context=False)
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(self.ai_bot.ask, prompt, False)
+                response = future.result(timeout=10)
             response = response.strip()
 
             # 清理格式
@@ -377,8 +425,119 @@ class AIScenarioMentor:
             return f"[學長] {response}"
 
         except Exception as e:
-            print(f"[Error] AI 回饋失敗: {e}")
+            print(f"[Error] AI 回饋失敗/超時: {e}")
             return None
+
+    def provide_sop_wrong_feedback(self, component: str, action: str,
+                                    fault_system: str, mistake_level: str,
+                                    template_hint: str) -> Optional[str]:
+        """
+        當學員 SOP 操作錯誤時，依當前 teaching_mode 用 LLM 生成自然回饋。
+        teaching_mode 已由 set_teaching_mode() 寫入 ai_bot.system_prompt。
+
+        Args:
+            component:     學員點選的零件
+            action:        學員選擇的動作
+            fault_system:  本次故障涉及的子系統
+            mistake_level: 'partial_action' | 'partial_component' | 'full_wrong'
+            template_hint: sop_definitions 產生的模板提示（作為參考，不要逐字複述）
+
+        Returns:
+            學長的自然語言回饋，或 None（降級用模板）
+        """
+        if not (self.use_ai and self.ai_bot):
+            return None
+
+        mistake_desc = {
+            'partial_action':    f'零件選對了（{component}），但動作不太對',
+            'partial_component': f'動作方向有點接近，但零件選錯了（選了 {component}）',
+            'full_wrong':        f'零件（{component}）和動作（{action}）都偏離了',
+        }.get(mistake_level, f'操作 {component} / {action} 不對')
+
+        mode_instruction = {
+            'challenge':   '你在挑戰模式。不要給答案，用反問讓他自己找出方向。一句話。',
+            'standard':    '用標準引導語氣，暗示他方向但不說出正確答案。一到兩句。',
+            'scaffolding': '學員需要協助。告訴他現在問題在哪個系統，引導他去對的地方，但不說出具體動作。兩句以內。',
+            'remedial':    '學員很卡。明確告訴他應該去哪個子系統，因為什麼原因，語氣要鼓勵。兩到三句。',
+        }.get(self.teaching_mode, '用標準引導語氣，不直接給答案。')
+
+        prompt = f"""[情境] 故障系統：{fault_system}
+[學員操作] {mistake_desc}
+[模板提示參考]（不要逐字複述，只作為方向依據）：{template_hint}
+
+{mode_instruction}
+用台灣繁體中文，像學長跟學弟說話的口氣，不要加任何標籤或符號前綴。"""
+
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(self.ai_bot.ask, prompt, False)
+                response = future.result(timeout=15)
+            response = response.strip()
+            # 清除可能的角色標籤
+            if response.startswith("[") and "]" in response:
+                response = response[response.index("]")+1:].strip()
+            return response if response else None
+        except Exception as e:
+            print(f"[Error] SOP wrong feedback LLM 失敗/超時: {e}")
+            return None
+
+    def generate_closing_question(self, fault_type: str, score: int) -> str:
+        """
+        故障排除完成後，依自適應模式生成一個反思問題，讓學員總結所學。
+        """
+        _CLOSING = {
+            'alignment_drift': {
+                'question': '你剛完成了對準系統的故障排除。回想一下，對準誤差超規最主要的連鎖影響是什麼？用自己的話說說看。',
+                'keywords': ['overlay', '疊對', '良率', '短路', '斷路', '偏移', '精度'],
+                'explanation': 'Overlay（疊對誤差）是核心影響：上下層電路圖案對不準，偏差過大就導致金屬層短路或 via 斷路，直接影響良率。DUV 製程要求 <3~5nm。'
+            },
+            'optical_contamination': {
+                'question': '光學污染處理完了。你覺得光源強度下降，最直接影響的是哪個製程參數？為什麼？',
+                'keywords': ['劑量', '曝光', '光阻', 'CD', '線寬', '圖案', '穿透率'],
+                'explanation': '光源強度下降→到達光阻的曝光劑量不足→光阻反應不完全→顯影後殘留→CD偏大，圖案不清晰，影響良率。'
+            },
+            'cooling_failure': {
+                'question': '冷卻問題解決了。溫度升高對鏡組最關鍵的影響是什麼？',
+                'keywords': ['熱膨脹', '折射率', '溫度', '對準', '焦點', '解析度'],
+                'explanation': '溫度升高→鏡組熱膨脹+折射率改變→光路偏移→焦點漂移、解析度下降，同時熱膨脹影響機械對準精度。'
+            },
+            'vacuum_leak': {
+                'question': '真空洩漏修好了。你能說說，真空環境對曝光製程為什麼這麼重要嗎？',
+                'keywords': ['污染', '微粒', '光學', '氣體', '折射', '穿透率'],
+                'explanation': '真空防止空氣中微粒污染光學鏡面（降低穿透率）；也防止空氣折射率變化影響光路；同時避免 outgassing 沉積在鏡面。'
+            },
+        }
+        info = _CLOSING.get(fault_type, {
+            'question': f'故障排除完成了。回想整個過程，你覺得這次 {fault_type} 故障，最關鍵的診斷步驟是哪一個？為什麼？',
+            'keywords': ['檢查', '確認', '異常', '系統', '數值'],
+            'explanation': '有系統地從症狀→根因→處置，是故障排除的核心思路。'
+        })
+
+        if self.use_ai and self.ai_bot:
+            mode_guide = {
+                'challenge':   '用挑戰語氣，讓他深入分析機制，不給提示。',
+                'standard':    '用引導語氣，讓他回顧關鍵概念。',
+                'scaffolding': '用鼓勵語氣，給一點方向再讓他說。',
+                'remedial':    '用鼓勵語氣，問一個最基礎的核心概念就好。',
+            }.get(self.teaching_mode, '用引導語氣。')
+            prompt = (
+                f"故障類型：{fault_type}，學員得分：{score}分。\n"
+                f"情境剛結束，請用學長口吻說一句收尾語（肯定完成），\n"
+                f"再問一個反思問題（繁體中文，一句話，不要給答案）。\n"
+                f"{mode_guide}"
+            )
+            try:
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=1) as ex:
+                    q = ex.submit(self.ai_bot.ask, prompt, False).result(timeout=15)
+                if q and q.strip():
+                    return q.strip()
+            except Exception:
+                pass
+
+        # fallback 固定問題
+        return f"做得好，故障排除完成！最後問你一個問題：{info['question']}"
 
     def provide_stage_transition_comment(self, scenario_info: Dict,
                                         new_stage: int, symptoms: List[str]) -> str:
@@ -412,7 +571,10 @@ class AIScenarioMentor:
 """
 
             try:
-                response = self.ai_bot.ask(prompt, maintain_context=True)
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=1) as ex:
+                    future = ex.submit(self.ai_bot.ask, prompt, True)
+                    response = future.result(timeout=10)
                 response = response.strip()
 
                 if response.startswith("[") and "]" in response:
@@ -421,7 +583,7 @@ class AIScenarioMentor:
                 return f"\n[學長] {response}\n"
 
             except Exception as e:
-                print(f"[Error] AI 評論失敗: {e}")
+                print(f"[Error] AI 評論失敗/超時: {e}")
 
         # 模板回應
         if new_stage == 1:
@@ -600,7 +762,10 @@ class AIScenarioMentor:
 """
 
         try:
-            response = self.ai_bot.ask(context, maintain_context=False)
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(self.ai_bot.ask, context, False)
+                response = future.result(timeout=10)
             response = response.strip()
 
             # 清理格式
@@ -618,7 +783,7 @@ class AIScenarioMentor:
             }
 
         except Exception as e:
-            print(f"[Warning] AI 理解輸入失敗: {e}")
+            print(f"[Warning] AI 理解輸入失敗/超時: {e}")
             return None
 
     def reset(self):
