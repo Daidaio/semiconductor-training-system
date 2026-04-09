@@ -317,14 +317,14 @@ var MAINT_SOP = {
     steps: [
       {title:'確認鏡片溫度', desc:'在 HMI CDU 面板查看各鏡片元件溫升。
 正常待機溫升應 < 0.5 K，目前超標。', action:'查看溫度數值'},
-      {title:'降低曝光劑量', desc:'立即在 HMI 將 Dose 降低 20%（例如 30→24 mJ/cm²），
+      {title:'降低曝光dose', desc:'立即在 HMI 將 Dose 降低 20%（例如 30→24 mJ/cm²），
 減少熱輸入給鏡片。', action:'已調降 Dose'},
       {title:'等待自然冷卻', desc:'停止曝光，等待鏡片溫度透過自然對流冷卻。
 依熱時間常數（τ₁≈90s, τ₂≈15min），
 需等待約 5 分鐘。', action:'確認溫度下降中'},
       {title:'檢查冷卻水流量', desc:'確認鏡筒冷卻水迴路流量是否正常，
 鏡筒周圍溫度感測器讀值應趨近室溫。', action:'確認冷卻正常'},
-      {title:'恢復曝光並監控', desc:'緩慢恢復正常劑量，持續監控 CDU 趨勢圖，
+      {title:'恢復曝光並監控', desc:'緩慢恢復正常dose，持續監控 CDU 趨勢圖，
 確認 CD 3σ 回到規格內（< 4 nm）。', action:'確認 CDU 恢復正常'},
     ]
   },
@@ -364,20 +364,20 @@ var MAINT_SOP = {
 確認 X/Y 3σ < 2 nm 後恢復量產。', action:'Overlay 合格'},
     ]
   },
-  // 劑量漂移（SECOM dose_drift）
+  // dose漂移（SECOM dose_drift）
   dose_drift: {
-    title: '曝光劑量漂移',
+    title: '曝光dose漂移',
     subtitle: 'Dose Drift — 雷射能量衰減 / 感測器偏移',
     triggerMeshes: ['Laser_Box','Laser_Out','Laser_Vent'],
     fault_api: 'dose_drift',
     steps: [
-      {title:'確認劑量讀值', desc:'查看 HMI 的 Dose sensor 讀值與設定值的差異，
+      {title:'確認dose讀值', desc:'查看 HMI 的 Dose sensor 讀值與設定值的差異，
 > 1% 偏差即需介入。', action:'確認偏差量'},
-      {title:'執行劑量校正', desc:'執行 dose calibration，系統自動調整
+      {title:'執行dose校正', desc:'執行 dose calibration，系統自動調整
 雷射電壓補償能量衰減。', action:'執行校正'},
-      {title:'清潔劑量感測器', desc:'雷射出口附近的 dose sensor 玻璃窗
+      {title:'清潔dose感測器', desc:'雷射出口附近的 dose sensor 玻璃窗
 可能有污染，用 IPA 輕拭後重新校正。', action:'清潔完成'},
-      {title:'確認穩定性', desc:'連續量測 10 次劑量值，
+      {title:'確認穩定性', desc:'連續量測 10 次dose值，
 確認 CV（變異係數）< 0.3%。', action:'確認穩定'},
     ]
   },
@@ -394,7 +394,7 @@ var MAINT_SOP = {
 量測實際最佳焦距，更新補償參數。', action:'執行校正'},
       {title:'查看鏡片溫升', desc:'在 CDU 面板確認各鏡片元件溫升，
 若 PL1–PL3 溫升 > 1.5 K 表示熱效應顯著。', action:'確認溫升'},
-      {title:'等待熱穩定或調降劑量', desc:'等待鏡片熱平衡（約 15 min），
+      {title:'等待熱穩定或調降dose', desc:'等待鏡片熱平衡（約 15 min），
 或降低 Dose 減緩熱漂移。', action:'確認焦距穩定'},
     ]
   }
@@ -680,7 +680,7 @@ var _FAULT_KEYWORDS={
   lens_hotspot:['鏡片過熱','lens hot','鏡片溫度','熱膨脹'],
   contamination:['光罩污染','reticle contamination','污染','contamination'],
   stage_error:['載台誤差','stage error','overlay 超規','overlay超規'],
-  dose_drift:['劑量漂移','dose drift','劑量異常'],
+  dose_drift:['dose漂移','dose drift','dose異常'],
   focus_drift:['焦距漂移','focus drift','焦距異常'],
 };
 function _detectFaultInText(text){

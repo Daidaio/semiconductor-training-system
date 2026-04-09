@@ -33,7 +33,7 @@ ALPHA_EFF   = DN_DT + (N_248 - 1.0) * ALPHA_FS   # ≈ 13.76e-6 K⁻¹
 # DUV NXT:870 典型規格
 DEFAULT_NA      = 0.75      # 數值孔徑 (dry DUV, NXT:870)
 DEFAULT_SIGMA   = 0.75      # 照明部分同調度
-DEFAULT_DOSE    = 30.0      # mJ/cm²  標準曝光劑量
+DEFAULT_DOSE    = 30.0      # mJ/cm²  標準曝光dose
 DEFAULT_FOCUS   = 0.0       # nm      焦距偏移（相對最佳焦距）
 WAVELENGTH      = 248.0     # nm      KrF 波長
 
@@ -66,8 +66,8 @@ LENS_ELEMENTS = {
 BOSSUNG = {
     "CD0":       130.0,   # nm  目標線寬 (best focus, nominal dose)
     "a_focus":     0.0008,  # nm / nm²  拋物線曲率 (CD 對焦距偏移的敏感度)
-    "b_dose":     -2.1,    # nm / (mJ/cm²)  劑量敏感度
-    "dose_nom":   30.0,    # mJ/cm²  標準劑量
+    "b_dose":     -2.1,    # nm / (mJ/cm²)  dose敏感度
+    "dose_nom":   30.0,    # mJ/cm²  標準dose
     "focus_best":  0.0,    # nm  最佳焦距
     "EL_plus":   150.0,    # nm  正側曝光容差 (±150 nm process window)
     "EL_minus": -150.0,    # nm  負側
@@ -108,7 +108,7 @@ class LensHeatingEngine:
         雙指數模型更新鏡片溫度。
         W(t) = A1*(1-exp(-t/τ1)) + A2*(1-exp(-t/τ2))
         dt: 距上次曝光的時間（秒）
-        dose: 本次曝光劑量 mJ/cm²
+        dose: 本次曝光dose mJ/cm²
         """
         el   = LENS_ELEMENTS[name]
         st   = self._lens_state[name]
@@ -252,7 +252,7 @@ class LensHeatingEngine:
 
         Parameters
         ----------
-        dose       : 曝光劑量 (mJ/cm²)
+        dose       : 曝光dose (mJ/cm²)
         focus      : 使用者設定的焦距偏移 (nm)
         na         : 數值孔徑
         sigma      : 照明部分同調度

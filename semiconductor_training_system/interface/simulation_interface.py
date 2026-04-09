@@ -631,7 +631,7 @@ class SimulationTrainingSystem:
             '熱膨脹', 'thermal expansion',
             '疊對', 'overlay', 'overlay shift',
             'CD', 'CD uniformity', '關鍵尺寸',
-            '曝光劑量', 'dose',
+            '曝光dose', 'dose',
             '對準', 'alignment',
             '真空', 'vacuum',
             '冷卻', 'cooling',
@@ -675,7 +675,7 @@ class SimulationTrainingSystem:
             '疊對': ['對準', '精度', '層', '偏移', '對齊', '重疊'],
             'overlay': ['align', 'layer', 'accuracy', 'shift', 'precision'],
             'CD': ['線寬', '尺寸', '寬度', 'critical', 'dimension', '關鍵'],
-            '曝光劑量': ['能量', '光', '劑量', '曝光', 'energy', '強度'],
+            '曝光dose': ['能量', '光', 'dose', '曝光', 'energy', '強度'],
             '真空': ['壓力', '抽氣', '泵浦', '密封', '洩漏'],
             '冷卻': ['溫度', '散熱', '流量', '循環', '控溫'],
         }
@@ -842,16 +842,16 @@ class SimulationTrainingSystem:
         _CLOSING_KEYWORDS = {
             # SOP_DEFINITIONS keys
             'stage_error':   ['overlay', '疊對', '良率', '短路', '斷路', '偏移', '精度', '對準', '製程'],
-            'contamination': ['劑量', '曝光', '光阻', 'CD', '線寬', '圖案', '穿透率', '污染', '預防'],
+            'contamination': ['dose', '曝光', '光阻', 'CD', '線寬', '圖案', '穿透率', '污染', '預防'],
             'lens_hotspot':  ['熱膨脹', '折射率', '溫度', '焦點', '解析度', '曝光', '品質'],
-            'dose_drift':    ['劑量', '光阻', '曝光量', '閾值', '線寬', 'CD', '良率'],
+            'dose_drift':    ['dose', '光阻', '曝光量', '閾值', '線寬', 'CD', '良率'],
             'focus_drift':   ['焦距', '解析度', '製程視窗', '焦點', 'DOF', '對焦', '景深'],
         }
         _CLOSING_EXPL = {
             'stage_error':   'Overlay 是核心影響：上下層對不準→金屬層短路或 via 斷路→良率下降。DUV 要求 <3~5nm。',
-            'contamination': '光強不足→劑量不夠→光阻反應不完全→CD偏大→圖案不清晰→良率受損。預防：定期清潔保養。',
+            'contamination': '光強不足→dose不夠→光阻反應不完全→CD偏大→圖案不清晰→良率受損。預防：定期清潔保養。',
             'lens_hotspot':  '溫升→熱膨脹+折射率改變→焦點漂移+對準偏移→解析度下降→製程良率受損。',
-            'dose_drift':    '劑量偏高→光阻過度曝光→線寬縮小；劑量偏低→圖案不清晰→CD超規→良率下降。',
+            'dose_drift':    'dose偏高→光阻過度曝光→線寬縮小；dose偏低→圖案不清晰→CD超規→良率下降。',
             'focus_drift':   '焦距漂移超出景深(DOF)→解析度下降→製程視窗縮窄→圖案邊緣模糊→良率受損。',
         }
         keywords = _CLOSING_KEYWORDS.get(fault_type, ['原因', '影響', '系統', '處理'])
@@ -873,8 +873,8 @@ class SimulationTrainingSystem:
                 'challenge': '如果熱點問題只在特定批次後出現，你會怎麼找出觸發條件？',
             },
             'dose_drift': {
-                'standard':  '劑量補償完成後，你會怎麼確認補償量是否準確？',
-                'challenge': '如果劑量在一天內有規律性漂移趨勢，你會怎麼分析根因？',
+                'standard':  'dose補償完成後，你會怎麼確認補償量是否準確？',
+                'challenge': '如果dose在一天內有規律性漂移趨勢，你會怎麼分析根因？',
             },
             'focus_drift': {
                 'standard':  '焦距調整後，你如何確認製程視窗已恢復規格內？',

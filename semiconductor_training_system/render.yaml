@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: semiconductor-training
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python render_start.py
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false        # 在 Render 控制台手動填入，不寫進這裡
+      - key: SECOM_DATA_PATH
+        value: uci-secom.csv

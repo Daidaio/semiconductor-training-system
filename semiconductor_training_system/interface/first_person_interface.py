@@ -427,7 +427,7 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
             'stage_error':   '載台對準誤差',
             'contamination': '光學系統污染',
             'lens_hotspot':  '鏡片熱點過熱',
-            'dose_drift':    '曝光劑量漂移',
+            'dose_drift':    '曝光dose漂移',
             'focus_drift':   '焦距漂移',
         }
         s = _session_summary
@@ -698,7 +698,7 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
                     'contamination':  '故障排除完成！最後問你：光學污染通常是怎麼發生的？你會怎麼預防它？',
                     'stage_error':    '故障排除完成！最後問你：對準誤差超規，最直接影響的是哪個製程指標？為什麼？',
                     'lens_hotspot':   '故障排除完成！最後問你：鏡片過熱對曝光品質的最直接影響是什麼？',
-                    'dose_drift':     '故障排除完成！最後問你：劑量漂移超規，會對光阻製程造成什麼影響？',
+                    'dose_drift':     '故障排除完成！最後問你：dose漂移超規，會對光阻製程造成什麼影響？',
                     'focus_drift':    '故障排除完成！最後問你：焦距漂移超規，對解析度和製程視窗有什麼影響？',
                 }
                 closing_q = _CLOSING_FALLBACKS.get(ft,
@@ -1261,7 +1261,7 @@ canvas{position:fixed;top:0;left:0;display:block;}
       <div class="hmi-section">
         <div class="hmi-section-title">故障注入 (SECOM Scenario)</div>
         <div class="fault-btns">
-          <button class="fault-btn" onclick="injectFault('dose_drift')">劑量漂移</button>
+          <button class="fault-btn" onclick="injectFault('dose_drift')">dose漂移</button>
           <button class="fault-btn" onclick="injectFault('focus_drift')">焦距漂移</button>
           <button class="fault-btn" onclick="injectFault('lens_hotspot')">鏡片過熱</button>
           <button class="fault-btn" onclick="injectFault('contamination')">光罩污染</button>
@@ -1384,15 +1384,15 @@ var DESC={
 var COMPONENT_ACTIONS={
   '投影鏡組':{
     inspect:['查看鏡片溫度','確認鏡片溫升趨勢','查看 CDU 數值'],
-    operate:['降低曝光劑量','停止曝光','恢復正常劑量']
+    operate:['降低曝光dose','停止曝光','恢復正常dose']
   },
   '晶圓載台':{
     inspect:['查看 Overlay 數值','查看載台位置誤差','確認氣浮壓力'],
     operate:['執行載台校正','執行 Cal Routine','恢復量產','驗證 Overlay 改善結果']
   },
   '雷射光源':{
-    inspect:['確認偏差量','查看劑量讀值','確認光束穩定性'],
-    operate:['執行劑量校正','清潔劑量感測器','確認穩定']
+    inspect:['確認偏差量','查看dose讀值','確認光束穩定性'],
+    operate:['執行dose校正','清潔dose感測器','確認穩定']
   },
   '液浸冷卻':{
     inspect:['確認流量讀值','查看冷卻水溫度','查看冷卻水流量'],
@@ -1400,11 +1400,11 @@ var COMPONENT_ACTIONS={
   },
   '照明系統':{
     inspect:['確認漂移量','查看焦距偏移','查看照明均勻性'],
-    operate:['執行 Focus 校正','等待熱穩定','降低劑量']
+    operate:['執行 Focus 校正','等待熱穩定','降低dose']
   },
   '控制系統':{
     inspect:['查看控制系統狀態','查看系統日誌'],
-    operate:['降低曝光劑量','停止曝光','恢復曝光','執行校正']
+    operate:['降低曝光dose','停止曝光','恢復曝光','執行校正']
   },
   '通風排氣':{
     inspect:['確認壓力讀值','查看真空壓力','查看氣流量'],
@@ -1416,7 +1416,7 @@ var COMPONENT_ACTIONS={
   },
   'HMI 螢幕':{
     inspect:['查看 CDU Map','查看感測器數值','查看 Overlay 數值'],
-    operate:['降低曝光劑量','停止曝光','執行校正']
+    operate:['降低曝光dose','停止曝光','執行校正']
   },
   '晶圓傳送':{
     inspect:['確認晶圓傳送狀態','查看 FOUP 狀態'],
@@ -1644,10 +1644,10 @@ var MAINT_SOP = {
     fault_api: 'lens_hotspot',
     steps: [
       {title:'確認鏡片溫度', desc:'在 HMI CDU 面板查看各鏡片元件溫升。\n正常待機溫升應 < 0.5 K，目前超標。', action:'查看溫度數值'},
-      {title:'降低曝光劑量', desc:'立即在 HMI 將 Dose 降低 20%（例如 30→24 mJ/cm²），\n減少熱輸入給鏡片。', action:'已調降 Dose'},
+      {title:'降低曝光dose', desc:'立即在 HMI 將 Dose 降低 20%（例如 30→24 mJ/cm²），\n減少熱輸入給鏡片。', action:'已調降 Dose'},
       {title:'等待自然冷卻', desc:'停止曝光，等待鏡片溫度透過自然對流冷卻。\n依熱時間常數（τ₁≈90s, τ₂≈15min），\n需等待約 5 分鐘。', action:'確認溫度下降中'},
       {title:'檢查冷卻水流量', desc:'確認鏡筒冷卻水迴路流量是否正常，\n鏡筒周圍溫度感測器讀值應趨近室溫。', action:'確認冷卻正常'},
-      {title:'恢復曝光並監控', desc:'緩慢恢復正常劑量，持續監控 CDU 趨勢圖，\n確認 CD 3σ 回到規格內（< 4 nm）。', action:'確認 CDU 恢復正常'},
+      {title:'恢復曝光並監控', desc:'緩慢恢復正常dose，持續監控 CDU 趨勢圖，\n確認 CD 3σ 回到規格內（< 4 nm）。', action:'確認 CDU 恢復正常'},
     ]
   },
   // 光罩污染（SECOM contamination）
@@ -1677,17 +1677,17 @@ var MAINT_SOP = {
       {title:'確認 Overlay 改善', desc:'重新曝光測試片，量測 Overlay，\n確認 X/Y 3σ < 2 nm 後恢復量產。', action:'Overlay 合格'},
     ]
   },
-  // 劑量漂移（SECOM dose_drift）
+  // dose漂移（SECOM dose_drift）
   dose_drift: {
-    title: '曝光劑量漂移',
+    title: '曝光dose漂移',
     subtitle: 'Dose Drift — 雷射能量衰減 / 感測器偏移',
     triggerMeshes: ['Laser_Box','Laser_Out','Laser_Vent'],
     fault_api: 'dose_drift',
     steps: [
-      {title:'確認劑量讀值', desc:'查看 HMI 的 Dose sensor 讀值與設定值的差異，\n> 1% 偏差即需介入。', action:'確認偏差量'},
-      {title:'執行劑量校正', desc:'執行 dose calibration，系統自動調整\n雷射電壓補償能量衰減。', action:'執行校正'},
-      {title:'清潔劑量感測器', desc:'雷射出口附近的 dose sensor 玻璃窗\n可能有污染，用 IPA 輕拭後重新校正。', action:'清潔完成'},
-      {title:'確認穩定性', desc:'連續量測 10 次劑量值，\n確認 CV（變異係數）< 0.3%。', action:'確認穩定'},
+      {title:'確認dose讀值', desc:'查看 HMI 的 Dose sensor 讀值與設定值的差異，\n> 1% 偏差即需介入。', action:'確認偏差量'},
+      {title:'執行dose校正', desc:'執行 dose calibration，系統自動調整\n雷射電壓補償能量衰減。', action:'執行校正'},
+      {title:'清潔dose感測器', desc:'雷射出口附近的 dose sensor 玻璃窗\n可能有污染，用 IPA 輕拭後重新校正。', action:'清潔完成'},
+      {title:'確認穩定性', desc:'連續量測 10 次dose值，\n確認 CV（變異係數）< 0.3%。', action:'確認穩定'},
     ]
   },
   // 焦距漂移（SECOM focus_drift）
@@ -1700,7 +1700,7 @@ var MAINT_SOP = {
       {title:'確認焦距漂移量', desc:'查看 HMI CDU 面板的 Focus Drift 值，\n> 30 nm 時會顯著影響 CD。', action:'確認漂移量'},
       {title:'執行 Focus 校正', desc:'使用 ALS（Aerial Latent Scrutiny）測試片\n量測實際最佳焦距，更新補償參數。', action:'執行校正'},
       {title:'查看鏡片溫升', desc:'在 CDU 面板確認各鏡片元件溫升，\n若 PL1–PL3 溫升 > 1.5 K 表示熱效應顯著。', action:'確認溫升'},
-      {title:'等待熱穩定或調降劑量', desc:'等待鏡片熱平衡（約 15 min），\n或降低 Dose 減緩熱漂移。', action:'確認焦距穩定'},
+      {title:'等待熱穩定或調降dose', desc:'等待鏡片熱平衡（約 15 min），\n或降低 Dose 減緩熱漂移。', action:'確認焦距穩定'},
     ]
   }
 };
@@ -1942,7 +1942,7 @@ var _FAULT_KEYWORDS={
   lens_hotspot:['鏡片過熱','lens hot','鏡片溫度','熱膨脹'],
   contamination:['光罩污染','reticle contamination','污染','contamination'],
   stage_error:['載台誤差','stage error','overlay 超規','overlay超規'],
-  dose_drift:['劑量漂移','dose drift','劑量異常'],
+  dose_drift:['dose漂移','dose drift','dose異常'],
   focus_drift:['焦距漂移','focus drift','焦距異常'],
 };
 function _detectFaultInText(text){

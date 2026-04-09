@@ -46,7 +46,7 @@ class DiagnosticAgent(BaseAgent):
                 "affected_subsystems": ["對準系統", "光學系統"]
             },
             "optical_intensity_drop": {
-                "symptoms": ["optical_intensity下降", "曝光劑量不足"],
+                "symptoms": ["optical_intensity下降", "曝光dose不足"],
                 "root_causes": ["光源老化", "光路遮擋", "鏡片污染"],
                 "severity": "high",
                 "affected_subsystems": ["光學系統", "光源模組"]
@@ -244,8 +244,8 @@ class DiagnosticAgent(BaseAgent):
         elif fault_type == "optical_intensity_drop":
             recommendations.append("1. 檢查光源狀態")
             recommendations.append("2. 清潔光路鏡片")
-            recommendations.append("3. 校驗曝光劑量")
-            next_steps = ["光源檢查", "鏡片清潔", "劑量校驗"]
+            recommendations.append("3. 校驗曝光dose")
+            next_steps = ["光源檢查", "鏡片清潔", "dose校驗"]
 
         elif fault_type == "electrical_fluctuation":
             recommendations.append("1. 檢查電源穩定性")

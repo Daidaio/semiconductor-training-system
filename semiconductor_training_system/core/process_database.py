@@ -136,7 +136,7 @@ class ProcessParameterDB:
                 "tolerance_max": 105.0,
                 "unit": "%",
                 "source": "expert",
-                "description": "曝光光源強度 - 影響曝光劑量"
+                "description": "曝光光源強度 - 影響曝光dose"
             },
             {
                 "process_name": "lithography",

@@ -78,11 +78,11 @@ class ScenarioGenerator:
                 "name": "光強度下降事件",
                 "difficulty": "MEDIUM",
                 "description": "曝光光源強度不足，影響曝光品質",
-                "story": "檢查發現曝光劑量監控器顯示光強度只有正常值的 70%。這將導致曝光不足。",
+                "story": "檢查發現曝光dose監控器顯示光強度只有正常值的 70%。這將導致曝光不足。",
                 "learning_objectives": [
                     "理解光學系統運作",
                     "掌握光源檢測方法",
-                    "熟悉劑量補償技術"
+                    "熟悉dose補償技術"
                 ],
                 "time_limit": 25
             },

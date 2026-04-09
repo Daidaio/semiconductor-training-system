@@ -135,7 +135,7 @@ class SecomNoiseModel:
 
     # ── 故障注入 ────────────────────────────────────────────────────────────
     FAULT_TYPES = {
-        "dose_drift":    {"health": 0.6, "desc": "劑量漂移 +8%"},
+        "dose_drift":    {"health": 0.6, "desc": "dose漂移 +8%"},
         "focus_drift":   {"health": 0.5, "desc": "焦距漂移 +80 nm"},
         "lens_hotspot":  {"health": 0.4, "desc": "鏡片局部過熱"},
         "contamination": {"health": 0.3, "desc": "光罩污染"},

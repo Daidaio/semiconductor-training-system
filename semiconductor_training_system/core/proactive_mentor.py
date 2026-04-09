@@ -169,7 +169,7 @@ class ProactiveMentor:
             'alignment drift': '對準偏移',
             'overlay': '疊對精度',
             'CD uniformity': '關鍵尺寸均勻性',
-            'dose': '曝光劑量',
+            'dose': '曝光dose',
             '熱膨脹': 'thermal expansion',
             '對準偏移': 'alignment drift',
             'wafer': '晶圓'
@@ -189,7 +189,7 @@ class ProactiveMentor:
             'question': "你知道 outgassing 為什麼對光學鏡面這麼傷嗎？",
             'term_name': 'outgassing',
             'answer_keywords': ['氣體', '揮發', '沉積', '污染', '鏡面', '塗層', '透光', '穿透率', 'transmittance', '分子'],
-            'correct_explanation': 'Outgassing 是材料在真空環境下釋放吸附氣體或揮發物的現象，這些分子會沉積在光學鏡面上，形成薄膜，讓穿透率 (transmittance) 下降，進而影響曝光劑量和解析度。'
+            'correct_explanation': 'Outgassing 是材料在真空環境下釋放吸附氣體或揮發物的現象，這些分子會沉積在光學鏡面上，形成薄膜，讓穿透率 (transmittance) 下降，進而影響曝光dose和解析度。'
         }
         alert += f"\n\n{self.pending_followup['question']}"
 
@@ -248,15 +248,15 @@ class ProactiveMentor:
         """生成光學系統異常告警（引導式開場）"""
         intensity = state.get('light_intensity', 100.0)
 
-        alert = f"光源強度掉了，現在只剩 {intensity:.1f}%，正常要 100%，這樣劑量就不夠。\n\n"
+        alert = f"光源強度掉了，現在只剩 {intensity:.1f}%，正常要 100%，這樣dose就不夠。\n\n"
         opening_question = "先問你：光源強度不足，你覺得對後續的曝光製程會有什麼影響？"
 
         self.pending_followup = {
             'question': opening_question,
             'term_name': '光阻',
-            'answer_keywords': ['感光', '顯影', '溶解', '圖案', '曝光', '不足', '殘留', '線寬', '光罩', '劑量', '品質'],
+            'answer_keywords': ['感光', '顯影', '溶解', '圖案', '曝光', '不足', '殘留', '線寬', '光罩', 'dose', '品質'],
             'correct_explanation': (
-                '光源強度不足代表到達光阻 (photoresist) 的劑量不夠，'
+                '光源強度不足代表到達光阻 (photoresist) 的dose不夠，'
                 '光阻反應不完全，顯影後有殘留，線寬 (CD) 就偏大，圖案不清晰，最終影響良率。'
             ),
             'socratic_followup': {
@@ -638,22 +638,22 @@ Uniformity：
   • CD變異 > 5% → 可能良率問題
 
 影響因素：
-  ✗ 曝光劑量不均 → CD變異
+  ✗ 曝光dose不均 → CD變異
   ✗ 溫度分布不均 → CD偏移
   ✗ 光學aberration → 解析度下降
 
 改善方法：
-  • 優化曝光劑量
+  • 優化曝光dose
   • 改善溫控均勻性
   • 校正光學系統""",
 
-            'dose': """【Dose / 曝光劑量】
+            'dose': """【Dose / 曝光dose】
 
 定義：光阻材料接收到的光能量（單位：mJ/cm²）
 
 為什麼重要：
-  • 劑量太低 → 光阻顯影不完全 → 圖案殘留
-  • 劑量太高 → 過度曝光 → 線寬變窄
+  • dose太低 → 光阻顯影不完全 → 圖案殘留
+  • dose太高 → 過度曝光 → 線寬變窄
   • 需要精確控制在±2%以內
 
 影響因素：

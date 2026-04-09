@@ -494,8 +494,8 @@ class AIScenarioMentor:
             },
             'optical_contamination': {
                 'question': '光學污染處理完了。你覺得光源強度下降，最直接影響的是哪個製程參數？為什麼？',
-                'keywords': ['劑量', '曝光', '光阻', 'CD', '線寬', '圖案', '穿透率'],
-                'explanation': '光源強度下降→到達光阻的曝光劑量不足→光阻反應不完全→顯影後殘留→CD偏大，圖案不清晰，影響良率。'
+                'keywords': ['dose', '曝光', '光阻', 'CD', '線寬', '圖案', '穿透率'],
+                'explanation': '光源強度下降→到達光阻的曝光dose不足→光阻反應不完全→顯影後殘留→CD偏大，圖案不清晰，影響良率。'
             },
             'cooling_failure': {
                 'question': '冷卻問題解決了。溫度升高對鏡組最關鍵的影響是什麼？',
