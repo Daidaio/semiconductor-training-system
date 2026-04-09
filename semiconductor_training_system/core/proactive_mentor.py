@@ -470,8 +470,9 @@ class ProactiveMentor:
             if llm_feedback:
                 return llm_feedback
 
-        # Fallback: 固定模板
-        no_q_ending = "這次訓練結束了，繼續加油！" if is_final_round else "繼續保持，有這個概念在後面故障排查會更順。"
+        # Fallback: 固定模板（is_closing_followup=True 才是結尾追問，普通 is_final_round 不是）
+        is_closing = followup.get('is_closing_followup', False)
+        no_q_ending = "這次訓練結束了，繼續加油！" if is_closing else "繼續保持，有這個概念在後面故障排查會更順。"
         if score >= 8:
             intro = f"對！{term} 你懂得挺清楚的。"
             outro = f"\n\n{next_q}" if next_q else f"\n\n{no_q_ending}"
@@ -510,12 +511,12 @@ class ProactiveMentor:
         # 明確不知道時的額外指示
         dont_know = any(w in user_answer for w in ['不知道', '不確定', '不太清楚', '不太懂', '沒概念', '不清楚'])
 
-        _is_final = (followup or {}).get('is_followup_round', False)
+        _is_closing = (followup or {}).get('is_closing_followup', False)
         next_q_str = (
             f"\n在回饋最後，自然地接上這個追問：「{next_q}」"
             if next_q else
             "\n回饋後不需要再追問。" + (
-                "給予鼓勵性結語，情境已完整結束。" if _is_final else
+                "給予鼓勵性結語，情境已完整結束，不要說繼續操作之類的話。" if _is_closing else
                 "鼓勵學員繼續去處理故障。"
             )
         )

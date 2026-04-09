@@ -396,9 +396,8 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
             self._json({"qa_pending": True}); return
         pm = _system_instance.proactive_mentor
         pf = pm.pending_followup if pm else None
-        # is_followup_round=True 是操作引導追問，不遮擋
-        proactive_q = bool(pf and not pf.get('is_followup_round', False))
-        self._json({"qa_pending": proactive_q})
+        # 所有追問都遮擋（包含第二輪確認），回答後才解除
+        self._json({"qa_pending": bool(pf)})
 
     def _api_tick(self):
         with _session_lock:
@@ -535,16 +534,13 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
             smart = _smart_response(text)
             if smart:
                 ai_reply = smart
-        # pending_follow_up 一律遮擋
-        # pending_follow_up（closing_reflection）一律遮擋
-        # proactive pending_followup：第一輪知識問題遮擋，第二輪（is_followup_round）不遮擋
+        # 所有 pending 問題一律遮擋（包含 is_followup_round 的第二輪追問）
         if _system_instance.pending_follow_up:
             qa_pending = True
         else:
             pm = _system_instance.proactive_mentor
             pf = pm.pending_followup if pm else None
-            # is_followup_round=True 表示是操作引導性追問，不遮擋，讓使用者邊操作邊回答
-            qa_pending = bool(pf and not pf.get('is_followup_round', False))
+            qa_pending = bool(pf)  # 所有追問都遮擋，回答後才解除
         # 情境結束旗標
         session_ended = not bool(_system_instance.session_active)
         sys_msg = self._latest_sys(msgs)

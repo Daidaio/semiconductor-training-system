@@ -912,6 +912,8 @@ class SimulationTrainingSystem:
         # 若 proactive_mentor 生成了 Socratic 追問，先讓使用者回答再結束
         if self.proactive_mentor and self.proactive_mentor.pending_followup:
             self._closing_followup_pending = True  # 等追問回答後再設 session_active=False
+            # 標記這個追問是結尾追問，讓 LLM 知道不要說「繼續處理故障」
+            self.proactive_mentor.pending_followup['is_closing_followup'] = True
         else:
             self.session_active = False  # 正式結束情境，不再接受操作輸入
         self.conversation_history.extend([
