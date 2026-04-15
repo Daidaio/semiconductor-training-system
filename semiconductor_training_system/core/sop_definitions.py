@@ -266,22 +266,27 @@ _WRONG_TEMPLATES = {
     ],
 }
 
+# 提示層級由「目前分數」決定（非 adaptive_mode）：
+#   85+  → hint_challenge ：不給實質提示，讓高分學員自行思考
+#   65~84 → hint_standard  ：給部件方向，不說具體動作
+#   40~64 → hint_scaffolding：給部件 + 動作方向
+#   <40  → hint_remedial  ：完整步驟指引
 _HINT_TEMPLATES = {
-    'challenge': [
-        '你應該有能力自己判斷，再看看 HMI 的數值。',
-        '仔細觀察警報訊息，答案就在那裡。',
+    'hint_challenge': [
+        '這個問題你有能力自己判斷，仔細看一下警報訊息，答案就在那裡。',
+        '分析一下目前的異常現象，思考問題出在哪個系統，你可以的。',
     ],
-    'standard': [
-        '提示：目前問題出在{fault_system}，先確認相關數值。',
-        '提示：去查一下{hint_component}的狀態。',
+    'hint_standard': [
+        '先看一下讀值確認偏差，再去找{hint_component}，靠近後按 E 選擇對應操作。',
+        '確認一下目前的讀值，判斷問題後，靠近{hint_component}，按 E 看看有哪些選項。',
     ],
-    'scaffolding': [
-        '現在應該去{hint_component}，因為{fault_system}出現異常。執行「{hint_action}」。',
-        '第{step_num}步：去{hint_component}，確認{hint_action}。',
+    'hint_scaffolding': [
+        '先看{fault_system}的讀值確認問題，再走到{hint_component}旁邊，按 E 選「{hint_action}」。',
+        '第{step_num}步：確認讀值偏差後，靠近{hint_component}，按 E 找到「{hint_action}」相關選項。',
     ],
-    'remedial': [
-        '直接告訴你：去{hint_component}，執行「{hint_action}」，因為{reason}。',
-        '現在做：去{hint_component}，選擇「{hint_action}」，這是第{step_num}步。',
+    'hint_remedial': [
+        '直接告訴你：走到{hint_component}旁邊，按 E 選「{hint_action}」，因為{reason}。',
+        '第{step_num}步：靠近{hint_component}，按 E，選「{hint_action}」，這樣就對了。',
     ],
 }
 
@@ -417,9 +422,18 @@ class ActionSession:
     # ── 求助提示 ──────────────────────────────────────────────────────────────
     def get_hint(self) -> dict:
         self.hint_count += 1
-        self.score = max(0, self.score - 5)
+        # 依扣分前的分數決定提示層級（分數愈高提示愈少）
+        if self.score >= 85:
+            hint_mode = 'hint_challenge'
+        elif self.score >= 65:
+            hint_mode = 'hint_standard'
+        elif self.score >= 40:
+            hint_mode = 'hint_scaffolding'
+        else:
+            hint_mode = 'hint_remedial'
+        self.score = max(0, self.score - 10)
         step = self.sop['steps'][self.current_step]
-        tmpl = random.choice(_HINT_TEMPLATES[self.adaptive_mode])
+        tmpl = random.choice(_HINT_TEMPLATES[hint_mode])
         hint = tmpl.format(
             fault_system=self.sop['fault_system'],
             hint_component=step['hint_component'],
@@ -433,6 +447,7 @@ class ActionSession:
             'current_step': self.current_step,
             'total_steps': self.total_steps,
             'adaptive_mode': self.adaptive_mode,
+            'hint_mode': hint_mode,
         }
 
     # ── 回饋生成 ──────────────────────────────────────────────────────────────

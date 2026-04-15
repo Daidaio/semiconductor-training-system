@@ -379,15 +379,16 @@ class ScenarioEngine:
         sensor_readings = self.sensors.read_all()
         initial_state = self.current_scenario["progression"][0]["state"].copy()
 
-        # 基礎狀態 - 合併感測器數據
+        # 基礎狀態 - 先套感測器基準，再以情境故障初始值覆蓋
+        # （必須讓情境故障數值優先，否則感測器「正常值」會蓋掉故障注入的異常讀數）
         self.current_state = {
             "is_running": True,
             "scenario_type": scenario_type,
             "scenario_name": self.current_scenario["name"],
             "start_time": self.scenario_start_time.isoformat(),
             "difficulty": difficulty,
-            **initial_state,
-            **sensor_readings  # 覆蓋為即時感測器數據
+            **sensor_readings,   # 感測器基準（背景值）
+            **initial_state,     # 情境故障值蓋過感測器正常值
         }
 
         # 生成初始警報

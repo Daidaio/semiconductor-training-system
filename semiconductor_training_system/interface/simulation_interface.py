@@ -108,6 +108,7 @@ class SimulationTrainingSystem:
         self.pending_theory_context = None  # 待反問的理論上下文（延遲生成反問）
         self.scenario_completed = False  # 場景是否完成
         self._closing_followup_pending = False  # 結尾反思後還有 Socratic 追問待回答
+        self.pending_score_bonus = 0            # 反問答對的加分，由 first_person_interface 取用
 
         print("[OK] System ready!")
 
@@ -886,36 +887,46 @@ class SimulationTrainingSystem:
             'challenge': '如果下次遇到類似症狀，你會調整哪些排查步驟？',
         })
 
-        # 用 ProactiveMentor LLM 生成個人化回饋
-        if self.proactive_mentor:
-            tmp_followup = {
-                'question': question,
-                'term_name': fault_type,
-                'answer_keywords': keywords,
-                'correct_explanation': explanation,
-                'socratic_followup': closing_socratic,  # 提供結尾追問，避免 LLM 說「繼續處理故障」
-            }
-            feedback = self.proactive_mentor._generate_followup_feedback(
-                score=score,
-                followup=tmp_followup,
-                user_answer=user_input
+        # 用 LLM 生成個人化結尾回饋，不再生成額外 Socratic 追問（避免多輪造成 session 不結束）
+        if self.proactive_mentor and self.proactive_mentor.llm:
+            # 直接用 LLM 生成結尾回饋，強制結語模式，不觸發 _generate_followup_feedback 的副作用
+            closing_prompt = (
+                f"你是半導體設備訓練系統的 AI 學長，學員剛完成故障排除並回答了反思問題。\n\n"
+                f"你問了：「{question}」\n"
+                f"學員的回答：「{user_input}」\n"
+                f"評估：{'答對了核心概念' if score >= 7 else '方向大致對' if score >= 4 else '概念還不太清楚'}\n"
+                f"正確說明：{explanation}\n\n"
+                f"請用口語、繁體中文，3句以內給予結尾回饋：\n"
+                f"- 針對學員回答給一句點評（答對就肯定，答錯就補充重點）\n"
+                f"- 最後用1句鼓勵的話結尾，讓學員知道訓練圓滿結束\n"
+                f"- 不要叫學員繼續操作或靠近部件，情境已經結束了\n"
             )
+            try:
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=1) as ex:
+                    llm_fb = ex.submit(
+                        self.proactive_mentor.llm.ask, closing_prompt, False
+                    ).result(timeout=20)
+                feedback = llm_fb if llm_fb else None
+            except Exception:
+                feedback = None
         else:
+            feedback = None
+
+        # Fallback：LLM 失敗或無 LLM 時用固定模板
+        if not feedback:
             if score >= 7:
-                feedback = "分析得很好！這次訓練到此結束，你對這個故障的理解相當紮實。"
+                feedback = f"對！{explanation}\n\n這次故障排除做得很好，概念也掌握到位了，繼續保持！"
             elif score >= 4:
-                feedback = f"方向對了。補充一下：{explanation}\n\n記住核心影響鏈，下次更順手。"
+                feedback = f"方向對了。補充一下：{explanation}\n\n這次訓練完成，記住核心影響鏈，下次更順手。"
             else:
-                feedback = f"沒關係，這次先把流程走過一遍。核心概念：{explanation}\n\n繼續努力！"
+                feedback = f"沒關係，先記住這個重點：{explanation}\n\n這次訓練完成了，繼續加油！"
 
         action_log += f"\n[{timestamp}] [反思評估] 情境結束"
-        # 若 proactive_mentor 生成了 Socratic 追問，先讓使用者回答再結束
-        if self.proactive_mentor and self.proactive_mentor.pending_followup:
-            self._closing_followup_pending = True  # 等追問回答後再設 session_active=False
-            # 標記這個追問是結尾追問，讓 LLM 知道不要說「繼續處理故障」
-            self.proactive_mentor.pending_followup['is_closing_followup'] = True
-        else:
-            self.session_active = False  # 正式結束情境，不再接受操作輸入
+        # 清除殘留的 pending_followup，直接結束 session（不再生成第三輪追問）
+        if self.proactive_mentor:
+            self.proactive_mentor.pending_followup = None
+        self.session_active = False
         self.conversation_history.extend([
             {"role": "user",      "content": user_input},
             {"role": "assistant", "content": feedback},
@@ -939,6 +950,21 @@ class SimulationTrainingSystem:
         """
         處理主動告警反問的回答，使用 proactive_mentor 評估並自適應難度。
         """
+        # ── 先檢查是不是在問概念/術語（不是在回答反問）──────────────────────
+        try:
+            clarification = self.proactive_mentor.check_clarification_during_followup(user_input)
+        except Exception:
+            clarification = None
+
+        if clarification:
+            # 操作者在追問期間問了概念問題，解釋後重複追問，不消耗 pending_followup
+            conversation_history.extend([
+                {"role": "user", "content": user_input},
+                {"role": "assistant", "content": clarification},
+            ])
+            return "", equipment_html, dashboard_html, equipment_status_html, conversation_history, action_log
+
+        # ── 正常評估操作者對反問的回答 ─────────────────────────────────────
         try:
             result = self.proactive_mentor.evaluate_followup_answer(user_input)
         except Exception as e:
@@ -958,18 +984,26 @@ class SimulationTrainingSystem:
         score = result['score']
         feedback = result['feedback']
         difficulty = result['difficulty']
+        # 儲存加分獎勵，供 first_person_interface 取用後加到 100 分制分數
+        self.pending_score_bonus = result.get('score_bonus', 0)
 
         # 將難度同步給 AI 學長的 LLM prompt
         mode_map = {'challenge': 'challenge', 'standard': 'standard', 'easy': 'scaffolding'}
         if self.use_ai_mentor and self.ai_mentor:
             self.ai_mentor.set_teaching_mode(mode_map.get(difficulty, 'standard'))
 
-        # 難度標示（口語化）
-        difficulty_hint = {
-            'challenge': '（你理解得不錯，下次會問得更深一點）',
-            'standard': '',
-            'easy': '（沒關係，下次問簡單一點的）'
-        }.get(difficulty, '')
+        # 難度標示（口語化）：只在答得好時才顯示 challenge 提示，
+        # 學員這輪得分 < 5 時不顯示，避免「你理解得不錯」出現在「不知道」後面
+        difficulty_hint = ''
+        if score < 5:
+            if difficulty == 'easy':
+                difficulty_hint = '（沒關係，下次問簡單一點的）'
+        else:
+            difficulty_hint = {
+                'challenge': '（你理解得不錯，下次會問得更深一點）',
+                'standard': '',
+                'easy': '',
+            }.get(difficulty, '')
 
         full_response = feedback
         if difficulty_hint:

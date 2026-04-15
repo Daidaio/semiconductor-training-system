@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>半導體訓練系統 — 學習成效問卷</title>
+<style>
+:root {
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --primary-light: #dbeafe;
+  --success: #16a34a;
+  --success-light: #dcfce7;
+  --warn: #d97706;
+  --warn-light: #fef3c7;
+  --danger: #dc2626;
+  --danger-light: #fee2e2;
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-400: #9ca3af;
+  --gray-600: #4b5563;
+  --gray-800: #1f2937;
+  --radius: 14px;
+  --shadow: 0 4px 28px rgba(0,0,0,0.09);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", sans-serif;
+  background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
+  min-height: 100vh;
+  padding: 24px 16px 80px;
+  color: var(--gray-800);
+}
+
+/* ══ LOADING ══ */
+#loading-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(255,255,255,.88); backdrop-filter: blur(4px);
+  z-index: 9999; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+  font-size: 16px; font-weight: 600; color: var(--primary);
+}
+#loading-overlay.active { display: flex; }
+.spinner {
+  width: 44px; height: 44px;
+  border: 4px solid var(--primary-light);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ══ HEADER ══ */
+.header { text-align: center; margin-bottom: 28px; }
+.header .badge {
+  display: inline-block; background: var(--primary); color: #fff;
+  font-size: 12px; font-weight: 600; letter-spacing: 1px;
+  padding: 4px 14px; border-radius: 999px; margin-bottom: 10px;
+}
+.header h1 { font-size: clamp(18px,4vw,26px); font-weight: 700; line-height: 1.35; }
+.header p  { margin-top: 6px; font-size: 13px; color: var(--gray-600); }
+
+/* ══ STEPPER ══ */
+.stepper {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0; margin: 0 auto 32px; max-width: 680px;
+  flex-wrap: nowrap; overflow-x: auto; padding: 4px 0;
+}
+.step-item { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 60px; }
+.step-circle {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700;
+  border: 2.5px solid var(--gray-200);
+  background: #fff; color: var(--gray-400);
+  transition: all .3s; position: relative; z-index: 1;
+}
+.step-circle.active  { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 0 0 4px var(--primary-light); }
+.step-circle.done    { background: var(--success); border-color: var(--success); color: #fff; }
+.step-label { font-size: 11px; margin-top: 5px; color: var(--gray-400); text-align: center; white-space: nowrap; }
+.step-label.active   { color: var(--primary); font-weight: 700; }
+.step-label.done     { color: var(--success); }
+.step-line {
+  flex: 1; height: 2px; background: var(--gray-200);
+  margin: -18px 0 0; min-width: 20px;
+  transition: background .3s;
+}
+.step-line.done { background: var(--success); }
+
+/* ══ CARD ══ */
+.card {
+  background: #fff; border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 28px 28px 24px;
+  margin: 0 auto 20px; max-width: 720px;
+}
+.card-title {
+  font-size: 13px; font-weight: 700; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--primary);
+  margin-bottom: 18px; display: flex; align-items: center; gap: 8px;
+}
+.card-title::after { content:''; flex:1; height:1px; background:var(--primary-light); }
+
+/* ══ QUESTION ══ */
+.question { margin-bottom: 22px; }
+.question:last-child { margin-bottom: 0; }
+.q-label { font-size: 15px; font-weight: 600; line-height: 1.55; margin-bottom: 12px; }
+.q-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--primary-light); color: var(--primary);
+  font-size: 12px; font-weight: 700; border-radius: 6px;
+  width: 26px; height: 22px; margin-right: 8px; flex-shrink: 0;
+}
+.options { display: flex; flex-direction: column; gap: 8px; }
+.opt {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 14px; border: 1.5px solid var(--gray-200);
+  border-radius: 8px; cursor: pointer;
+  transition: border-color .15s, background .15s;
+  font-size: 14px; line-height: 1.5;
+}
+.opt:hover { border-color: var(--primary); background: var(--primary-light); }
+.opt input  { margin-top: 2px; accent-color: var(--primary); cursor: pointer; }
+.opt.selected { border-color: var(--primary); background: var(--primary-light); }
+.opt.correct  { border-color: var(--success); background: var(--success-light); }
+.opt.wrong    { border-color: var(--danger);  background: var(--danger-light); }
+
+/* Likert */
+.likert { overflow-x: auto; padding-bottom: 4px; }
+.likert table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; min-width: 480px; }
+.likert thead th { padding: 8px 6px; text-align: center; font-weight: 600; color: var(--gray-600); background: var(--gray-50); border-bottom: 2px solid var(--gray-200); }
+.likert thead th:first-child { text-align: left; padding-left: 12px; }
+.likert tbody tr:hover { background: var(--gray-50); }
+.likert tbody td { padding: 11px 6px; text-align: center; border-bottom: 1px solid var(--gray-100); vertical-align: middle; }
+.likert tbody td:first-child { text-align: left; padding-left: 12px; font-weight: 500; line-height: 1.45; }
+.likert input[type=radio] { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; }
+
+/* inputs */
+.q-textarea { width: 100%; border: 1.5px solid var(--gray-200); border-radius: 8px; padding: 12px 14px; font-size: 14px; font-family: inherit; resize: vertical; min-height: 80px; transition: border-color .15s; color: var(--gray-800); }
+.q-textarea:focus { outline: none; border-color: var(--primary); }
+.q-input { border: 1.5px solid var(--gray-200); border-radius: 8px; padding: 10px 14px; font-size: 14px; font-family: inherit; width: 100%; max-width: 300px; transition: border-color .15s; color: var(--gray-800); }
+.q-input:focus { outline: none; border-color: var(--primary); }
+
+/* name input large */
+.name-input {
+  width: 100%; max-width: 360px; border: 2px solid var(--primary);
+  border-radius: 10px; padding: 13px 16px; font-size: 16px;
+  font-family: inherit; color: var(--gray-800);
+  transition: box-shadow .15s;
+}
+.name-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,.2); }
+
+/* ══ TRAINING PAGE ══ */
+.training-box {
+  text-align: center; padding: 32px 24px;
+}
+.training-icon { font-size: 64px; margin-bottom: 16px; }
+.training-box h2 { font-size: 22px; font-weight: 700; margin-bottom: 10px; }
+.training-box p  { font-size: 15px; color: var(--gray-600); line-height: 1.7; margin-bottom: 24px; }
+.training-link-btn {
+  display: inline-block; background: var(--primary); color: #fff;
+  font-size: 16px; font-weight: 700; padding: 14px 40px;
+  border-radius: 999px; text-decoration: none;
+  box-shadow: 0 4px 14px rgba(37,99,235,.35);
+  transition: background .2s, transform .15s;
+  margin-bottom: 12px;
+}
+.training-link-btn:hover { background: var(--primary-dark); transform: translateY(-1px); }
+.training-note { font-size: 13px; color: var(--gray-400); }
+
+/* ══ RESULT ══ */
+.score-row { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin-bottom: 20px; }
+.score-box {
+  flex: 1; min-width: 130px; max-width: 200px;
+  border-radius: var(--radius); padding: 20px 16px; text-align: center;
+}
+.score-box .label { font-size: 12px; font-weight: 600; letter-spacing: 1px; margin-bottom: 8px; }
+.score-box .big   { font-size: 48px; font-weight: 800; line-height: 1; }
+.score-box .sub   { font-size: 13px; margin-top: 4px; }
+.pre-box  { background: var(--warn-light); color: var(--warn); border: 2px solid var(--warn); }
+.post-box { background: var(--success-light); color: var(--success); border: 2px solid var(--success); }
+.diff-box { background: var(--primary-light); color: var(--primary); border: 2px solid var(--primary); }
+.answer-review { text-align: left; margin-top: 16px; }
+.answer-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 7px 0; border-bottom: 1px solid var(--gray-100); }
+.tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.tag-ok   { background: var(--success-light); color: var(--success); }
+.tag-err  { background: var(--danger-light);  color: var(--danger); }
+.tag-skip { background: var(--gray-100);       color: var(--gray-400); }
+
+/* export */
+.export-box { background: var(--gray-50); border: 1.5px solid var(--gray-200); border-radius: 10px; padding: 16px; margin-top: 20px; font-size: 13px; color: var(--gray-600); text-align: left; }
+.export-box pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; margin-top: 8px; color: var(--gray-800); line-height: 1.6; }
+.send-status { text-align: center; font-size: 13px; padding: 10px; border-radius: 8px; margin-top: 12px; display: none; }
+.send-status.ok   { background: var(--success-light); color: var(--success); display: block; }
+.send-status.fail { background: var(--warn-light); color: var(--warn); display: block; }
+
+/* ══ BUTTONS ══ */
+.actions { display: flex; justify-content: center; gap: 12px; margin: 8px auto 0; max-width: 720px; flex-wrap: wrap; }
+.btn { padding: 14px 36px; border-radius: 999px; border: none; font-size: 16px; font-weight: 600; cursor: pointer; transition: all .2s; }
+.btn-primary { background: var(--primary); color: #fff; box-shadow: 0 4px 14px rgba(37,99,235,.3); }
+.btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
+.btn-secondary { background: var(--gray-100); color: var(--gray-600); }
+.btn-secondary:hover { background: var(--gray-200); }
+.btn-success { background: var(--success); color: #fff; box-shadow: 0 4px 14px rgba(22,163,74,.3); }
+.btn-success:hover { background: #15803d; transform: translateY(-1px); }
+
+/* ══ PROGRESS ══ */
+.progress-wrap { background: var(--gray-200); border-radius: 999px; height: 6px; margin: 0 auto 8px; max-width: 480px; overflow: hidden; }
+.progress-bar  { height: 100%; background: linear-gradient(90deg, var(--primary), #60a5fa); border-radius: 999px; transition: width .4s ease; width: 0%; }
+.progress-label { text-align: center; font-size: 12px; color: var(--gray-400); margin-bottom: 20px; }
+
+.hidden { display: none !important; }
+
+@media (max-width: 500px) {
+  .card { padding: 20px 14px; }
+  .btn  { padding: 12px 22px; font-size: 14px; }
+  .step-label { font-size: 10px; }
+}
+</style>
+</head>
+<body>
+
+<div id="loading-overlay"><div class="spinner"></div><span>正在送出資料…</span></div>
+
+<!-- ══ HEADER ══ -->
+<div class="header">
+  <div class="badge">長庚大學 碩士論文研究</div>
+  <h1>半導體微影製程訓練系統<br>學習成效評量問卷</h1>
+  <p>感謝您參與本研究，整個流程約 15～20 分鐘。</p>
+</div>
+
+<!-- ══ STEPPER ══ -->
+<div class="stepper" id="stepper">
+  <div class="step-item">
+    <div class="step-circle active" id="sc1">1</div>
+    <div class="step-label active" id="sl1">背景資料</div>
+  </div>
+  <div class="step-line" id="line1"></div>
+  <div class="step-item">
+    <div class="step-circle" id="sc2">2</div>
+    <div class="step-label" id="sl2">前測</div>
+  </div>
+  <div class="step-line" id="line2"></div>
+  <div class="step-item">
+    <div class="step-circle" id="sc3">3</div>
+    <div class="step-label" id="sl3">前測結果 & 訓練</div>
+  </div>
+  <div class="step-line" id="line3"></div>
+  <div class="step-item">
+    <div class="step-circle" id="sc4">4</div>
+    <div class="step-label" id="sl4">後測</div>
+  </div>
+  <div class="step-line" id="line4"></div>
+  <div class="step-item">
+    <div class="step-circle" id="sc5">5</div>
+    <div class="step-label" id="sl5">結果 & 評估</div>
+  </div>
+</div>
+
+<!-- ══════════ STEP 1：背景資料 ══════════ -->
+<div id="page1">
+  <div class="card">
+    <div class="card-title">Step 1 &nbsp; 背景資料</div>
+
+    <div class="question">
+      <div class="q-label"><span class="q-num">Q1</span>請輸入您的姓名</div>
+      <input type="text" id="participant-name" class="name-input" placeholder="請輸入姓名">
+      <div style="font-size:12px;color:var(--gray-400);margin-top:6px;">姓名僅用於配對前後測資料，不對外公開。</div>
+    </div>
+
+    <div class="question">
+      <div class="q-label"><span class="q-num">Q2</span>您目前的職業背景：</div>
+      <div class="options" data-name="a1" data-type="radio">
+        <label class="opt"><input type="radio" name="a1" value="半導體工程師_0~5年"> 半導體工程師（年資 0～5 年）</label>
+        <label class="opt"><input type="radio" name="a1" value="資深半導體工程師_5年以上"> 資深半導體工程師（年資 5 年以上）</label>
+        <label class="opt"><input type="radio" name="a1" value="非半導體業"> 非半導體業（其他行業 / 學生 / 其他）</label>
+      </div>
+    </div>
+
+    <div class="question">
+      <div class="q-label"><span class="q-num">Q3</span>您的最高學歷：</div>
+      <div class="options" data-name="a2" data-type="radio">
+        <label class="opt"><input type="radio" name="a2" value="高中/專科"> 高中 / 專科</label>
+        <label class="opt"><input type="radio" name="a2" value="大學"> 大學</label>
+        <label class="opt"><input type="radio" name="a2" value="碩士以上"> 碩士以上</label>
+      </div>
+    </div>
+
+    <div class="question">
+      <div class="q-label"><span class="q-num">Q4</span>您有接觸過半導體製程相關知識嗎？</div>
+      <div class="options" data-name="a3" data-type="radio">
+        <label class="opt"><input type="radio" name="a3" value="完全沒有"> 完全沒有</label>
+        <label class="opt"><input type="radio" name="a3" value="只有基本概念"> 只有基本概念（修過課 / 讀過文章）</label>
+        <label class="opt"><input type="radio" name="a3" value="有實際經驗"> 有實際工作或實驗室經驗</label>
+      </div>
+    </div>
+
+    <div class="question" style="margin-bottom:0">
+      <div class="q-label"><span class="q-num">Q5</span>您是否曾經使用過任何製程設備模擬訓練系統？</div>
+      <div class="options" data-name="a4" data-type="radio">
+        <label class="opt"><input type="radio" name="a4" value="沒有"> 沒有</label>
+        <label class="opt"><input type="radio" name="a4" value="有"> 有</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" onclick="goStep(2)">下一步：前測 →</button>
+  </div>
+</div>
+
+<!-- ══════════ STEP 2：前測 ══════════ -->
+<div id="page2" class="hidden">
+  <div class="card">
+    <div class="card-title" style="display:flex;align-items:center;gap:10px;">
+      Step 2 &nbsp; 前測（共 15 題）
+      <span id="difficulty-badge" style="display:none;font-size:11px;padding:3px 10px;border-radius:20px;color:#fff;font-weight:600;"></span>
+    </div>
+    <p style="font-size:13px;color:var(--gray-600);margin-bottom:8px;">請在<strong>進入訓練系統之前</strong>如實作答。每題均為單選，請依直覺作答，不計分，僅供研究分析使用。</p>
+    <div class="progress-wrap"><div class="progress-bar" id="pre-progress"></div></div>
+    <div class="progress-label" id="pre-progress-label">已作答 0 / 15 題</div>
+    <div id="pre-questions"></div>
+  </div>
+  <div class="actions">
+    <button class="btn btn-secondary" onclick="goStep(1)">← 上一步</button>
+    <button class="btn btn-primary" onclick="goStep(3)">提交前測 →</button>
+  </div>
+</div>
+
+<!-- ══════════ STEP 3：前測結果 & 訓練系統 ══════════ -->
+<div id="page3" class="hidden">
+  <!-- 前測分數 -->
+  <div class="card">
+    <div class="card-title">Step 3 &nbsp; 前測結果</div>
+    <div style="text-align:center;padding:20px 0 8px;">
+      <div style="font-size:13px;color:var(--gray-600);margin-bottom:6px;">您的前測成績</div>
+      <div style="font-size:64px;font-weight:800;color:var(--primary);line-height:1;" id="pre-score-display">—</div>
+      <div style="font-size:16px;color:var(--gray-600);margin-top:4px;">/ 15 分</div>
+      <div style="font-size:14px;color:var(--gray-600);margin-top:12px;" id="pre-score-comment"></div>
+    </div>
+  </div>
+  <!-- 進入訓練系統 -->
+  <div class="card">
+    <div class="training-box">
+      <div class="training-icon">🖥️</div>
+      <h2>請進入訓練系統</h2>
+      <p>請點擊下方按鈕進入半導體微影製程訓練系統，<br>完整體驗一輪訓練後再回到此頁面繼續後測。</p>
+      <a id="training-link" href="#" target="_blank" class="training-link-btn" onclick="markTrainingClicked()">進入訓練系統 →</a>
+      <div class="training-note">訓練完成後，請返回此頁面勾選下方確認框再繼續</div>
+      <div style="margin-top:20px;padding:14px 20px;background:var(--gray-50);border-radius:10px;border:1.5px solid var(--gray-200);text-align:left;">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;font-weight:600;">
+          <input type="checkbox" id="training-done-check" style="width:18px;height:18px;cursor:pointer;" onchange="togglePostBtn()">
+          我已完成訓練系統的完整體驗
+        </label>
+      </div>
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn btn-primary" id="post-btn" onclick="goStep(4)" disabled style="opacity:.45;cursor:not-allowed;">訓練完成，進入後測 →</button>
+  </div>
+</div>
+
+<!-- ══════════ STEP 4：後測 ══════════ -->
+<div id="page4" class="hidden">
+  <div class="card">
+    <div class="card-title">Step 4 &nbsp; 後測（共 15 題）</div>
+    <p style="font-size:13px;color:var(--gray-600);margin-bottom:8px;">請在<strong>完成訓練系統之後</strong>如實作答。每題均為單選，請依直覺作答，不計分，僅供研究分析使用。</p>
+    <div class="progress-wrap"><div class="progress-bar" id="post-progress"></div></div>
+    <div class="progress-label" id="post-progress-label">已作答 0 / 15 題</div>
+    <div id="post-questions"></div>
+  </div>
+  <div class="actions">
+    <button class="btn btn-secondary" onclick="goStep(3)">← 上一步</button>
+    <button class="btn btn-primary" onclick="goStep(5)">提交後測，進入系統評估 →</button>
+  </div>
+</div>
+
+<!-- ══════════ STEP 5：後測結果 + 系統評估 ══════════ -->
+<div id="page5" class="hidden">
+
+  <!-- 後測分數 -->
+  <div class="card">
+    <div class="card-title">後測結果</div>
+    <div style="text-align:center;padding:20px 0 8px;">
+      <div style="font-size:13px;color:var(--gray-600);margin-bottom:6px;">您的後測成績</div>
+      <div style="font-size:64px;font-weight:800;color:var(--success);line-height:1;" id="post-score-display">—</div>
+      <div style="font-size:16px;color:var(--gray-600);margin-top:4px;">/ 15 分</div>
+    </div>
+  </div>
+
+  <!-- 前後測比較 -->
+  <div class="card" id="result-card">
+    <div class="card-title">前後測比較</div>
+    <div class="score-row">
+      <div class="score-box pre-box">
+        <div class="label">前測</div>
+        <div class="big" id="pre-score-num">—</div>
+        <div class="sub">/ 15 分</div>
+      </div>
+      <div class="score-box post-box">
+        <div class="label">後測</div>
+        <div class="big" id="post-score-num">—</div>
+        <div class="sub">/ 15 分</div>
+      </div>
+      <div class="score-box diff-box">
+        <div class="label">進步</div>
+        <div class="big" id="diff-score-num">—</div>
+        <div class="sub">分</div>
+      </div>
+    </div>
+    <div style="text-align:center;font-size:18px;font-weight:700;margin-bottom:6px;" id="result-title"></div>
+    <div style="text-align:center;font-size:13px;color:var(--gray-600);" id="result-detail"></div>
+
+    <details style="margin-top:16px;">
+      <summary style="cursor:pointer;font-size:13px;color:var(--primary);font-weight:600;">查看後測每題對錯</summary>
+      <div class="answer-review" id="answer-review"></div>
+    </details>
+  </div>
+
+  <!-- 系統評估 -->
+  <div class="card">
+    <div class="card-title">系統評估問卷</div>
+    <p style="font-size:13px;color:var(--gray-600);margin-bottom:20px;">1 = 非常不同意，5 = 非常同意</p>
+
+    <div class="likert">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:52%">題目</th>
+            <th>1<br><small>非常<br>不同意</small></th>
+            <th>2</th>
+            <th>3<br><small>普通</small></th>
+            <th>4</th>
+            <th>5<br><small>非常<br>同意</small></th>
+          </tr>
+        </thead>
+        <tbody id="likert-body"></tbody>
+      </table>
+    </div>
+
+    <div class="question" style="margin-top:24px;">
+      <div class="q-label"><span class="q-num">C8</span>您認為這套訓練系統最有幫助的部分是？（可複選）</div>
+      <div class="options" data-name="c8" data-type="checkbox">
+        <label class="opt"><input type="checkbox" name="c8" value="故障警報情境模擬"> 故障警報情境模擬</label>
+        <label class="opt"><input type="checkbox" name="c8" value="AI導師即時解說"> AI 導師的即時解說</label>
+        <label class="opt"><input type="checkbox" name="c8" value="AI導師追問反饋"> AI 導師的追問與反饋</label>
+        <label class="opt"><input type="checkbox" name="c8" value="3D設備視覺化"> 3D 設備視覺化</label>
+        <label class="opt"><input type="checkbox" name="c8" value="SOP步驟引導"> SOP 步驟引導</label>
+        <label class="opt"><input type="checkbox" name="c8" value="其他">
+          其他：<input class="q-input" type="text" id="c8-other" placeholder="請說明" style="margin-left:8px;max-width:200px;" onclick="this.parentElement.querySelector('input[type=checkbox]').checked=true">
+        </label>
+      </div>
+    </div>
+
+    <div class="question" style="margin-bottom:0">
+      <div class="q-label"><span class="q-num">C9</span>如果要改善這套系統，您最希望加強的地方是？</div>
+      <textarea class="q-textarea" id="c9" placeholder="請自由填寫您的建議…"></textarea>
+    </div>
+  </div>
+
+  <div id="send-status" class="send-status"></div>
+
+  <div class="actions">
+    <button class="btn btn-success" onclick="submitAll()">送出全部資料</button>
+  </div>
+
+  <!-- 送出後顯示 -->
+  <div class="card hidden" id="done-card">
+    <div style="text-align:center;padding:16px 0;">
+      <div style="font-size:48px;margin-bottom:12px;">✅</div>
+      <div style="font-size:20px;font-weight:700;margin-bottom:8px;">感謝您的參與！</div>
+      <div style="font-size:14px;color:var(--gray-600);line-height:1.7;">您的資料已成功送出。<br>如有問題請聯絡研究者。</div>
+    </div>
+    <div class="export-box">
+      <strong>備份紀錄（如送出失敗可截圖或複製此段文字給研究者）</strong>
+      <pre id="export-text"></pre>
+    </div>
+    <div class="actions" style="margin-top:16px;">
+      <button class="btn btn-secondary" onclick="copyExport()">複製紀錄</button>
+      <button class="btn btn-secondary" onclick="window.print()">列印 / 存 PDF</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════
+     JAVASCRIPT
+═══════════════════════════════════════ -->
+<script>
+// ── 設定區 ──────────────────────────────
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyGSUC9C4hqnZC_gmU_nWlILgwaMY9GlglaMGv0fg1ReDrxpMXfWRaBMxl-6hviVJWN/exec';
+
+// ▼▼▼ 每次啟動 ngrok 後，把網址填在這裡 ▼▼▼
+const TRAINING_URL = 'https://706d-220-128-101-77.ngrok-free.app/viewer.html';
+// ▲▲▲ 例如：'https://abc123.ngrok-free.app/viewer.html' ▲▲▲
+
+// ── 資料 ────────────────────────────────
+// 兩版答案排列相同，標準版與進階版共用此答案表
+const ANSWERS = {
+  b1:'B', b2:'B', b3:'C', b4:'B', b5:'B',
+  b6:'A', b7:'B', b8:'B', b9:'B', b10:'B',
+  b11:'C', b12:'B', b13:'B', b14:'C', b15:'B'
+};
+
+// ── 標準版（無半導體經驗 / 學生）────────────────
+// 題目對應訓練系統 5 大故障情境與 AI 反問的核心理論
+const QLIST = [
+  // Q1  冷卻異常 → 熱膨脹 → overlay（lens_hotspot / cooling 情境理論）
+  { key:'b1', text:'訓練系統偵測到「冷卻水流量不足」，鏡組溫度因此升高，對曝光製程最直接的影響是？',
+    opts:['鏡組數值孔徑（NA）因溫升膨脹增大，景深（DOF）縮小，對焦容裕降低',
+          '機台金屬結構件因熱膨脹，導致上下層電路 overlay（疊對）偏移',
+          '腔體溫升加速 outgassing，揮發物沉積鏡面使穿透率下降'] },
+
+  // Q2  overlay 定義（stage_error 情境理論）
+  { key:'b2', text:'Overlay（疊對）誤差的定義是？',
+    opts:['同一曝光場內，各位置 CD（線寬）偏離目標值的均勻性偏差',
+          '上下兩層電路圖案對準時產生的偏移量',
+          '晶圓在載台上傾斜，使曝光焦點位置與設計值偏離的量'] },
+
+  // Q3  stage_error SOP 第一步
+  { key:'b3', text:'訓練系統出現「對準系統警報（stage_error）」，SOP 的第一步是？',
+    opts:['先曝光一片測試片量測 overlay 數值，確認超規後再通知工程師',
+          '調整晶圓載台掃描速度，降低動態對準誤差後再確認警報',
+          '確認 HMI 警報代碼與 overlay 偏移量，再執行對準系統重新校正'] },
+
+  // Q4  鏡組溫度 → 折射率 → 焦點偏移（focus_drift 情境理論）
+  { key:'b4', text:'訓練系統中鏡組溫度升高，影響曝光解析度的根本原因是？',
+    opts:['溫升使光阻中光敏劑加速熱分解，未曝光區域也產生感光反應，對比度下降',
+          '鏡組折射率隨溫度改變，導致焦點位置偏移，解析度下降',
+          '鏡組膨脹使光路長度改變，曝光 dose 密度降低，光阻感光不足'] },
+
+  // Q5  光源強度↓ → dose↓ → CD↑（dose_drift / 光學污染情境理論）
+  { key:'b5', text:'訓練系統顯示光源強度從 100% 降至 85%，對光阻最主要的影響是？',
+    opts:['光阻感光曲線斜率增大，對比度提升，CD 反而縮小',
+          '曝光 dose 不足，光阻反應不完全，顯影後有殘留，CD（線寬）偏大',
+          'dose 偏低使光阻吸收光子不均，膜厚均勻性惡化，但 CD 維持不變'] },
+
+  // Q6  真空洩漏 → outgassing → 穿透率↓（vacuum_leak 情境理論）
+  { key:'b6', text:'真空系統發生洩漏時，outgassing（脫氣現象）對光學鏡面最主要的影響是？',
+    opts:['揮發性物質沉積在鏡面，形成薄膜，穿透率下降，影響曝光 dose',
+          '腔體壓力升高使空氣折射率改變，對準感測器訊號偏移，overlay 增大',
+          '氣體分子吸附在鏡面形成水膜，表面反射率增加，曝光均勻性惡化'] },
+
+  // Q7  focus_drift SOP（確認鏡組溫度 → 執行焦點校正）
+  { key:'b7', text:'訓練系統「焦距漂移（focus_drift）」情境，確認 HMI 焦距偏差後，下一步 SOP 是？',
+    opts:['調整晶圓載台高度（Z 軸）直接補償焦點偏差，不需等鏡組溫度穩定',
+          '確認鏡組溫度狀態後，執行焦點校正（Focus Calibration）',
+          '執行光源輸出功率校正，補償因 dose 變化引起的等效焦點偏移'] },
+
+  // Q8  SOP 第一步通則
+  { key:'b8', text:'發現設備出現異常警報時，標準操作程序（SOP）的第一步通常是？',
+    opts:['先暫停量產、通知班長與製程工程師，等待指示後再處理',
+          '確認 HMI 上的警報代碼，判斷原因後依程序處理',
+          '在 SPC 系統確認近期製程趨勢，判斷是否有漸進性偏移後再行動'] },
+
+  // Q9  dose_drift 補償確認（曝光測試片量測 CD）
+  { key:'b9', text:'訓練系統「dose 漂移」情境排除後，執行 dose 補償，如何確認補償量正確？',
+    opts:['在 HMI 確認 dose monitor 讀值回到 100%，直接恢復量產',
+          '曝光測試片，量測 CD 偏差是否在規格範圍內（< ±3%）',
+          '執行光源波長校正，確認 ArF 193nm 輸出穩定後再恢復量產'] },
+
+  // Q10  contamination（光罩污染）清潔後確認
+  { key:'b10', text:'訓練系統「光罩污染（contamination）」清潔完成後，正確的確認步驟是？',
+    opts:['在 HMI 確認穿透率監控數值恢復正常，直接恢復量產',
+          '曝光測試片，量測 CD 值與缺陷率，確認合格後才恢復量產',
+          '用粒子計數器掃描確認無微粒後即可恢復，不需曝光確認片'] },
+
+  // Q11  overlay 超規 → 電路短路/斷路 → 良率↓
+  { key:'b11', text:'對準誤差超出規格（overlay > 5nm），上下層電路最可能產生的問題是？',
+    opts:['源極與汲極間距縮短，短通道效應惡化，電晶體漏電流增加',
+          '上下層偏移產生衍射圖案，散射光干擾下層曝光的對準訊號',
+          '金屬層短路或 via 孔斷路，直接導致良率下降'] },
+
+  // Q12  lens_hotspot 排除後 → 焦點校正確認
+  { key:'b12', text:'訓練系統「鏡片過熱（lens_hotspot）」故障排除後，應優先執行哪個確認步驟？',
+    opts:['在 HMI 確認鏡組溫度已回到正常範圍，直接恢復量產',
+          '重新執行焦點校正（Focus Calibration），確認 CD 值在規格內',
+          '先執行 overlay 校正確認無位移，再執行焦點校正'] },
+
+  // Q13  outgassing 穿透率↓ → dose↓ → 良率（連鎖影響）
+  { key:'b13', text:'真空洩漏造成 outgassing，穿透率下降後，對晶圓製程最直接的連鎖影響是？',
+    opts:['對準感測器光路也受污染，SNR 下降，overlay 誤差隨之增大',
+          '到達晶圓的曝光 dose 不足，CD 偏大，良率下降',
+          '穿透率下降後光源自動補償輸出功率，dose 維持穩定但燈管壽命縮短'] },
+
+  // Q14  焦點校正目的
+  { key:'b14', text:'執行焦點校正（Focus Calibration）的目的是？',
+    opts:['消除投影鏡組的球差（spherical aberration），改善 CD 場內均勻性',
+          '補償晶圓表面局部高低差（wafer flatness），使整片均勻曝光',
+          '重新校正焦點位置，確保圖案解析度維持在規格內'] },
+
+  // Q15  stage_error 最後確認步驟
+  { key:'b15', text:'訓練系統「載台誤差（stage_error）」排除後，執行對準校正，最後的確認步驟是？',
+    opts:['先曝光測試片量測 CD 值確認解析度恢復，再確認 overlay 數值',
+          '確認 HMI 上警報完全解除，overlay 數值回到規格範圍內',
+          '對準完成後直接恢復量產，overlay 在正式量產中自動監控即可'] },
+];
+
+// ── 進階版（有半導體經驗，0~5年 或 5年以上）────────
+// 答案排列與標準版完全相同，題目更深入技術細節
+const QLIST_HARD = [
+  // Q1  冷卻→熱膨脹→overlay（進階：CTE差異機制）
+  { key:'b1', text:'HMI 顯示冷卻水流量從 5.0 降至 3.8 L/min，鏡組溫度同步升高 1.5°C，你判斷 overlay 偏移增大的根本機制是？',
+    opts:['水流減少引發管路振動，晶圓夾具定位出現機械誤差',
+          '鏡組等結構件因各材料熱膨脹係數（CTE）差異，光軸相對晶圓夾具發生位移，overlay 誤差增大',
+          '溫升使真空泵效率下降，壓力波動造成對準感測器誤判'] },
+
+  // Q2  overlay 系統性偏移（進階：stage_error 系統性vs隨機）
+  { key:'b2', text:'處理 stage_error 情境，量測報告顯示每片晶圓 overlay 誤差都固定偏向 X 方向，你最先懷疑哪個子系統？',
+    opts:['投影鏡組像差補償失效，造成全場系統性偏移',
+          '晶圓載台（Wafer Stage）X 軸位置重複性異常或 alignment baseline 漂移',
+          '光源強度不穩，dose 週期性偏低影響對準訊號 SNR'] },
+
+  // Q3  stage_error SOP（進階：overlay 超規後的操作順序）
+  { key:'b3', text:'HMI 顯示 overlay 量測值 8nm，超出 DUV 規格（< 5nm），你的第一步操作是？',
+    opts:['提高曝光劑量以補償偏移對 CD 的影響',
+          '調整光源強度，確認對準訊號 SNR 是否充足',
+          '停機確認 HMI 警報代碼，靠近對準系統執行重新校正'] },
+
+  // Q4  鏡組溫度→折射率（進階：thermo-optic coefficient）
+  { key:'b4', text:'你觀察到鏡組溫度上升 1°C，HMI 顯示 thermo-optic coefficient 為負值，此時哪個製程參數最需要注意？',
+    opts:['折射率增大→焦距縮短→焦點前移，需調高晶圓載台高度補償',
+          '折射率下降→光路折射角改變→焦點後移，需重新執行 Focus Calibration 確認',
+          '溫升對光學路徑影響可忽略，只有機械膨脹需要補償'] },
+
+  // Q5  正型光阻 dose↓→CD↑（進階：正型光阻感光機制）
+  { key:'b5', text:'曝光一批正型光阻（Positive PR）晶圓，dose 比設定值低 15%，這批 CD 的變化是？',
+    opts:['CD 縮小；光子不足使光阻感光不完全，溶解率下降，線條收縮',
+          'CD 增大；光阻曝光量不足，顯影後邊緣有殘留，線條邊緣外擴',
+          'CD 不變；在 exposure latitude 容許範圍內，dose 偏差對 CD 無影響'] },
+
+  // Q6  真空洩漏→outgassing（進階：光化學碳質薄膜機制）
+  { key:'b6', text:'真空系統有微量洩漏，你觀察到光學鏡面穿透率緩慢下降，你判斷這是什麼機制？',
+    opts:['揮發性有機物在 193nm ArF 光子照射下光化學分解，於鏡面形成碳質薄膜，穿透率持續下降',
+          '氣體分子物理吸附在鏡面形成水膜，表面反射率增加',
+          '洩漏氣流衝擊鏡面造成微刮傷，散射率緩慢增加'] },
+
+  // Q7  focus_drift SOP（進階：殘餘熱應力判斷）
+  { key:'b7', text:'確認焦距漂移，DOF 尚未超規但 CDU 3σ 已從 1.5nm 惡化至 2.8nm，你的判斷是？',
+    opts:['CDU 惡化跟焦距無關，應優先排查 dose 均勻性問題',
+          '即使未超 DOF 規格，局部焦距差異已累積到可見 CDU 惡化，應立即執行 Focus Calibration',
+          'CDU 惡化屬正常製程波動，等下個定期保養再校正'] },
+
+  // Q8  多重警報（進階：冷卻→對準的根因連鎖）
+  { key:'b8', text:'HMI 同時跳出冷卻異常（ALM-CLG）與對準異常（ALM-ALN），你判斷兩者關係是？',
+    opts:['兩個警報彼此獨立，各自排查根因',
+          '冷卻異常→鏡組溫升→熱膨脹→對準偏移，應先排除冷卻根因，再重新校正對準',
+          '對準系統損壞誤觸發了冷卻警報，優先處理對準'] },
+
+  // Q9  dose 補償後確認（進階：mean CD vs 3σ 分別判讀）
+  { key:'b9', text:'執行 dose 補償後曝光測試片：CDU 3σ 從 3nm 改善至 1.5nm，但 mean CD 仍偏高 +3nm（target ±1nm），你的下一步是？',
+    opts:['提高曝光劑量 3%，強制將 mean CD 拉回目標值',
+          '微調 dose offset（mean 偏高代表補償量不足），再測一片確認 mean CD 在 ±1nm 內',
+          '執行對準校正，排除 overlay 誤差對 CD 量測的干擾'] },
+
+  // Q10  光罩污染清潔後確認（進階：AIMS 量測超規的判斷）
+  { key:'b10', text:'光罩污染清潔後，AIMS 量測顯示 CD linearity 誤差 ±1.5nm，超出規格 ±1nm，你的處置是？',
+    opts:['調高曝光劑量 +3% 補償 CD linearity 的系統性誤差',
+          '評估污染是否完全移除；若仍超規，判斷光罩是否受損，考慮廢片或送修',
+          '重清一次後直接送回機台，不需再次量測確認'] },
+
+  // Q11  overlay 超規 → 電性問題（進階：via 斷路/接觸電阻）
+  { key:'b11', text:'量測報告顯示 Metal 1 與 Contact 層偏移 6nm，超出 4nm overlay budget，最直接的電性問題是？',
+    opts:['電晶體臨界電壓（Vt）飄移，影響開關速度',
+          '閘極氧化層電場增強，TDDB 可靠度壽命縮短',
+          'Contact 孔部分落在 Metal landing pad 外，接觸電阻增大甚至斷路，功能失效'] },
+
+  // Q12  lens_hotspot 排除後（進階：殘餘熱應力需等溫穩定）
+  { key:'b12', text:'處理鏡片過熱後執行 Focus Calibration，發現 Best Focus Position 比平時偏移 20nm，你的判斷是？',
+    opts:['調低曝光能量 5%，用 dose 補償焦點偏移造成的 CD 變化',
+          '鏡組可能有殘餘熱應力，等溫度完全穩定（≥ 30 min）後再校正一次確認',
+          '20nm 偏移代表鏡片已永久損傷，立即更換投影鏡組'] },
+
+  // Q13  outgassing 穿透率↓ → CDU 惡化（進階：光源強度→CDU 連鎖）
+  { key:'b13', text:'你看到 HMI 光源強度從 100% 降至 88%，你預期對 CDU（關鍵尺寸均勻性）的影響是？',
+    opts:['CDU 不受光源強度影響，只取決於投影鏡組像差',
+          '光源強度下降→dose 偏低且各區不均→CDU 3σ 惡化，各區線寬一致性下降',
+          '光源強度降低時掃描速度自動補償，CDU 維持不變'] },
+
+  // Q14  焦點校正目的（進階：最終量產前確認流程）
+  { key:'b14', text:'完成焦距漂移故障排除後，最後的確認步驟是？',
+    opts:['降低曝光速度，讓焦點系統有更多時間穩定後再量產',
+          '調高光源強度補償散焦對曝光 dose 的影響',
+          '曝光測試片，量測 CD 值確認解析度恢復規格，警報完全解除後才恢復量產'] },
+
+  // Q15  stage_error 最後確認（進階：系統性漂移確認 baseline）
+  { key:'b15', text:'訓練系統 stage_error 情境，確認 X 軸 overlay 持續偏移 +10nm 且每片重複，排查優先順序是？',
+    opts:['更換光源燈泡，因 dose 不足影響對準訊號 SNR',
+          '確認 Wafer Stage X 軸位置重複性與 alignment baseline 是否漂移，執行校正後量測確認',
+          '調高曝光劑量 +2% 補償偏移造成的 CD 變化'] },
+];
+
+// ── 動態題目狀態 ──────────────────────────
+let activeQList = QLIST;   // 預設一般版，goStep(2)時依年資切換
+
+const LIKERT_ITEMS = [
+  { id:'c1', text:'這套訓練系統的操作介面容易上手' },
+  { id:'c2', text:'AI 導師的回應讓我覺得像在跟真人互動' },
+  { id:'c3', text:'訓練中遇到的異常情境讓我印象深刻' },
+  { id:'c4', text:'AI 導師的提問讓我更認真思考概念' },
+  { id:'c5', text:'這套系統比純粹閱讀手冊更有效率' },
+  { id:'c6', text:'完成訓練後，我對操作相關設備更有信心' },
+  { id:'c7', text:'我會推薦這套系統給其他需要訓練的同事' },
+];
+
+// ── 狀態 ────────────────────────────────
+let currentStep = 1;
+let preAnswers  = {};
+let postAnswers = {};
+let preScore    = 0;
+let postScore   = 0;
+
+// ── 重建前後測題目（切換難易度時呼叫）──────
+function rebuildQuestions(qlist) {
+  activeQList = qlist;
+  ['pre-questions','post-questions'].forEach(id => {
+    document.getElementById(id).innerHTML = '';
+  });
+  buildQuestions('pre-questions',  'pre',  'pre-progress', 'pre-progress-label');
+  buildQuestions('post-questions', 'post', 'post-progress', 'post-progress-label');
+}
+
+// ── 初始化 ──────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  buildQuestions('pre-questions',  'pre',  'pre-progress', 'pre-progress-label');
+  buildQuestions('post-questions', 'post', 'post-progress', 'post-progress-label');
+  buildLikert();
+  bindOptionHighlight();
+
+  // 設定訓練系統連結
+  const link = document.getElementById('training-link');
+  if (TRAINING_URL && TRAINING_URL !== 'YOUR_NGROK_URL_HERE') {
+    link.href = TRAINING_URL;
+  } else {
+    link.href = '#';
+    link.style.background = 'var(--gray-400)';
+    link.title = '請先在 questionnaire.html 頂部設定 TRAINING_URL';
+    link.onclick = (e) => { e.preventDefault(); alert('請先啟動 ngrok，並將網址填入 questionnaire.html 的 TRAINING_URL 變數。'); };
+  }
+});
+
+function markTrainingClicked() {
+  // 記錄受試者有點擊進入訓練系統
+  sessionStorage.setItem('trainingClicked', 'true');
+}
+
+function togglePostBtn() {
+  const checked = document.getElementById('training-done-check').checked;
+  const btn = document.getElementById('post-btn');
+  btn.disabled = !checked;
+  btn.style.opacity = checked ? '1' : '.45';
+  btn.style.cursor  = checked ? 'pointer' : 'not-allowed';
+}
+
+// ── 建立題目 HTML ───────────────────────
+function buildQuestions(containerId, prefix, progressId, labelId) {
+  const container = document.getElementById(containerId);
+  activeQList.forEach((q, idx) => {
+    const div = document.createElement('div');
+    div.className = 'question';
+    const opts = q.opts.map((o, i) => {
+      const val = ['A','B','C','D'][i];
+      return `<label class="opt">
+        <input type="radio" name="${prefix}_${q.key}" value="${val}" onchange="updateBProgress('${prefix}','${progressId}','${labelId}')">
+        ${o}
+      </label>`;
+    }).join('');
+    div.innerHTML = `<div class="q-label"><span class="q-num">${idx+1}</span>${q.text}</div>
+                     <div class="options" data-type="radio">${opts}</div>`;
+    container.appendChild(div);
+  });
+}
+
+function updateBProgress(prefix, barId, labelId) {
+  let filled = 0;
+  activeQList.forEach(q => { if (document.querySelector(`input[name="${prefix}_${q.key}"]:checked`)) filled++; });
+  const total = activeQList.length;
+  document.getElementById(barId).style.width = (filled / total * 100) + '%';
+  document.getElementById(labelId).textContent = `已作答 ${filled} / ${total} 題`;
+}
+
+// ── 建立 Likert ──────────────────────────
+function buildLikert() {
+  const tbody = document.getElementById('likert-body');
+  LIKERT_ITEMS.forEach(item => {
+    const tr = document.createElement('tr');
+    let cells = `<td>${item.text}</td>`;
+    for (let v = 1; v <= 5; v++) cells += `<td><input type="radio" name="${item.id}" value="${v}"></td>`;
+    tr.innerHTML = cells;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Option highlight ─────────────────────
+function bindOptionHighlight() {
+  document.addEventListener('change', e => {
+    if (e.target.type === 'radio' && e.target.closest('.options')) {
+      const group = e.target.closest('.options');
+      if (group.dataset.type === 'radio') {
+        group.querySelectorAll('.opt').forEach(o => o.classList.remove('selected'));
+        e.target.closest('.opt').classList.add('selected');
+      }
+    }
+    if (e.target.type === 'checkbox') {
+      e.target.closest('.opt').classList.toggle('selected', e.target.checked);
+    }
+  });
+}
+
+// ── 步驟切換 ─────────────────────────────
+function goStep(step) {
+  // 驗證
+  if (step === 2 && !validateStep1()) return;
+  if (step === 3 && !validatePreTest()) return;
+  if (step === 5 && !validatePostTest()) return;
+
+  // Step 1 → 2：依年資切換題目難度
+  if (step === 2) {
+    const a1val = document.querySelector('input[name="a1"]:checked')?.value || '';
+    // 半導體工程師（0~5年 或 5年以上）→ 進階版；非半導體業 → 標準版
+    const isEngineer = a1val.includes('半導體工程師');
+    const targetList = isEngineer ? QLIST_HARD : QLIST;
+    if (activeQList !== targetList) rebuildQuestions(targetList);
+
+    // 顯示難度提示
+    const badge = document.getElementById('difficulty-badge');
+    if (badge) {
+      badge.textContent = isEngineer ? '⚡ 進階版' : '📝 標準版';
+      badge.style.background = isEngineer ? '#7c3aed' : '#2563eb';
+      badge.style.display = 'inline-block';
+    }
+  }
+
+  // 計分
+  if (step === 3) calcScore('pre');
+  if (step === 5) calcScore('post');
+
+  // 隱藏全部
+  [1,2,3,4,5].forEach(i => document.getElementById('page'+i).classList.add('hidden'));
+  document.getElementById('page'+step).classList.remove('hidden');
+  currentStep = step;
+  updateStepper(step);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  // 進入第3步時顯示前測分數
+  if (step === 3) showPreScore();
+  // 進入第5步時顯示後測分數與比較
+  if (step === 5) showPostScores();
+}
+
+function validateStep1() {
+  const name = document.getElementById('participant-name').value.trim();
+  if (!name) { alert('請輸入您的姓名。'); return false; }
+  if (!document.querySelector('input[name="a1"]:checked')) { alert('請選擇職業背景。'); return false; }
+  if (!document.querySelector('input[name="a2"]:checked')) { alert('請選擇最高學歷。'); return false; }
+  if (!document.querySelector('input[name="a3"]:checked')) { alert('請選擇製程知識接觸程度。'); return false; }
+  if (!document.querySelector('input[name="a4"]:checked')) { alert('請回答是否使用過模擬系統。'); return false; }
+  return true;
+}
+
+function validatePreTest() {
+  let missing = 0;
+  activeQList.forEach(q => { if (!document.querySelector(`input[name="pre_${q.key}"]:checked`)) missing++; });
+  if (missing > 0) {
+    if (!confirm(`還有 ${missing} 題未作答，確定要提交嗎？未作答視為 0 分。`)) return false;
+  }
+  return true;
+}
+
+function validatePostTest() {
+  let missing = 0;
+  activeQList.forEach(q => { if (!document.querySelector(`input[name="post_${q.key}"]:checked`)) missing++; });
+  if (missing > 0) {
+    if (!confirm(`還有 ${missing} 題未作答，確定要提交嗎？未作答視為 0 分。`)) return false;
+  }
+  return true;
+}
+
+function calcScore(prefix) {
+  let score = 0;
+  const ans = {};
+  activeQList.forEach(q => {
+    const sel = document.querySelector(`input[name="${prefix}_${q.key}"]:checked`);
+    const val = sel ? sel.value : null;
+    ans[q.key] = { val, isCorrect: val === ANSWERS[q.key] };
+    if (val === ANSWERS[q.key]) score++;
+  });
+  if (prefix === 'pre')  { preAnswers = ans;  preScore  = score; }
+  if (prefix === 'post') { postAnswers = ans; postScore = score; }
+}
+
+// ── Stepper UI ───────────────────────────
+function updateStepper(active) {
+  for (let i = 1; i <= 5; i++) {
+    const circle = document.getElementById('sc' + i);
+    const label  = document.getElementById('sl' + i);
+    circle.className = 'step-circle ' + (i < active ? 'done' : i === active ? 'active' : '');
+    label.className  = 'step-label '  + (i < active ? 'done' : i === active ? 'active' : '');
+    if (i < active) circle.textContent = '✓';
+    else circle.textContent = i;
+  }
+  for (let i = 1; i <= 4; i++) {
+    document.getElementById('line' + i).className = 'step-line ' + (i < active ? 'done' : '');
+  }
+}
+
+// ── 顯示前測分數（Step 3，只顯示分數，不顯示對錯） ──
+function showPreScore() {
+  document.getElementById('pre-score-display').textContent = preScore;
+  const comments = [
+    '不用擔心，完成訓練後一定會進步！',
+    '有基本概念，訓練後會更紮實。',
+    '不錯的基礎，訓練後應該更上層樓！',
+    '基礎很好，訓練後會更完整！',
+  ];
+  const idx = preScore >= 12 ? 3 : preScore >= 8 ? 2 : preScore >= 4 ? 1 : 0;
+  document.getElementById('pre-score-comment').textContent = comments[idx];
+}
+
+// ── 顯示後測分數與前後對比（Step 5） ──────
+function showPostScores() {
+  // 後測大分數
+  document.getElementById('post-score-display').textContent = postScore;
+
+  // 比較卡
+  document.getElementById('pre-score-num').textContent  = preScore;
+  document.getElementById('post-score-num').textContent = postScore;
+  const diff = postScore - preScore;
+  document.getElementById('diff-score-num').textContent = (diff >= 0 ? '+' : '') + diff;
+
+  const titles = ['繼續加油！', '有進步，繼續努力！', '進步明顯，表現不錯！', '非常優秀！'];
+  const idx = diff >= 5 ? 3 : diff >= 3 ? 2 : diff >= 1 ? 1 : 0;
+  document.getElementById('result-title').textContent = titles[idx];
+  document.getElementById('result-detail').textContent =
+    `前測 ${preScore} 分 → 後測 ${postScore} 分，進步了 ${diff > 0 ? diff : 0} 題`;
+
+  // 後測每題對錯（含題目名稱）
+  let html = '<div style="margin-top:8px;">';
+  QLIST.forEach((q, i) => {
+    const post = postAnswers[q.key] || { val: null, isCorrect: false };
+    const tag  = post.isCorrect ? '<span class="tag tag-ok">✓ 答對</span>'
+               : (post.val === 'D' || !post.val)
+                 ? '<span class="tag tag-skip">— 未答</span>'
+                 : '<span class="tag tag-err">✗ 答錯</span>';
+    html += `<div class="answer-row">${tag}<span>Q${i+1}. ${q.text.slice(0,30)}${q.text.length>30?'…':''}</span></div>`;
+  });
+  html += '</div>';
+  document.getElementById('answer-review').innerHTML = html;
+}
+
+// ── 最終送出 ─────────────────────────────
+function submitAll() {
+  const name = document.getElementById('participant-name').value.trim();
+  const a1 = document.querySelector('input[name="a1"]:checked')?.value || '';
+  const a2 = document.querySelector('input[name="a2"]:checked')?.value || '';
+  const a3 = document.querySelector('input[name="a3"]:checked')?.value || '';
+  const a4 = document.querySelector('input[name="a4"]:checked')?.value || '';
+
+  const likert = {};
+  LIKERT_ITEMS.forEach(item => {
+    likert[item.id] = document.querySelector(`input[name="${item.id}"]:checked`)?.value || '';
+  });
+  const c8vals = [...document.querySelectorAll('input[name="c8"]:checked')].map(e => e.value);
+  const c8other = document.getElementById('c8-other').value;
+  if (c8other) c8vals.push('其他：' + c8other);
+  const c9 = document.getElementById('c9').value;
+
+  const payload = {
+    timestamp: new Date().toISOString(),
+    participant_id: name,
+    a1, a2, a3, a4,
+    difficulty: activeQList === QLIST_HARD ? 'advanced' : 'standard',
+    pre_score: preScore, post_score: postScore,
+  };
+  // pre answers
+  activeQList.forEach(q => {
+    payload['pre_'  + q.key] = preAnswers[q.key]?.val    || '';
+    payload['pre_'  + q.key + '_ok'] = preAnswers[q.key]?.isCorrect  || false;
+    payload['post_' + q.key] = postAnswers[q.key]?.val   || '';
+    payload['post_' + q.key + '_ok'] = postAnswers[q.key]?.isCorrect || false;
+  });
+  // C
+  Object.assign(payload, likert);
+  payload.c8 = c8vals.join('、');
+  payload.c9 = c9;
+
+  // Export text
+  const ts = new Date().toLocaleString('zh-TW');
+  let exp = `=== 半導體訓練系統問卷紀錄 ===\n時間：${ts}\n姓名：${name}\n`;
+  exp += `職業背景：${a1}\n學歷：${a2}\n製程知識：${a3}\n曾用模擬系統：${a4}\n\n`;
+  exp += `[前測] ${preScore}/15\n`;
+  QLIST.forEach((q,i) => { const a = preAnswers[q.key] || {}; exp += `Q${i+1}：${a.val||'—'} ${a.isCorrect?'✓':'✗'}\n`; });
+  exp += `\n[後測] ${postScore}/15\n`;
+  QLIST.forEach((q,i) => { const a = postAnswers[q.key] || {}; exp += `Q${i+1}：${a.val||'—'} ${a.isCorrect?'✓':'✗'}\n`; });
+  exp += `\n進步：${postScore - preScore >= 0 ? '+' : ''}${postScore - preScore} 分\n`;
+  exp += `\n[系統評估]\n`;
+  LIKERT_ITEMS.forEach(item => { exp += `${item.text}：${likert[item.id]||'—'}\n`; });
+  exp += `最有幫助：${c8vals.join('、')||'（未選）'}\n改善建議：${c9||'（未填）'}\n`;
+  document.getElementById('export-text').textContent = exp;
+
+  // Send
+  _sendToBackend(payload);
+}
+
+function _sendToBackend(payload) {
+  const statusEl = document.getElementById('send-status');
+  document.getElementById('loading-overlay').classList.add('active');
+  fetch(SCRIPT_URL, {
+    method: 'POST', mode: 'no-cors',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(payload),
+  })
+  .then(() => {
+    document.getElementById('loading-overlay').classList.remove('active');
+    statusEl.className = 'send-status ok';
+    statusEl.textContent = '✓ 資料已成功送出！感謝您的參與。';
+    document.getElementById('done-card').classList.remove('hidden');
+    document.querySelector('.actions:last-of-type').classList.add('hidden');
+  })
+  .catch(() => {
+    document.getElementById('loading-overlay').classList.remove('active');
+    statusEl.className = 'send-status fail';
+    statusEl.textContent = '⚠ 網路異常，請截圖或複製下方備份紀錄傳給研究者。';
+    document.getElementById('done-card').classList.remove('hidden');
+  });
+}
+
+function copyExport() {
+  const text = document.getElementById('export-text').textContent;
+  navigator.clipboard.writeText(text)
+    .then(() => alert('已複製到剪貼板！'))
+    .catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta);
+      alert('已複製到剪貼板！');
+    });
+}
+</script>
+</body>
+</html>

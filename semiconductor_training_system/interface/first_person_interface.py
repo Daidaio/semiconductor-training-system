@@ -248,35 +248,55 @@ def _build_hmi_data(state: dict) -> None:
                 range_str = f"{norm} {unit}（警告 > {warn}）"
         else:
             range_str = f"{norm} {unit}" if norm else "-"
+        fval = float(val)
+        # 科學記號處理（真空壓力等極小值）
+        if abs(fval) < 0.001 and fval != 0:
+            disp_val = f"{fval:.2e}"
+        else:
+            disp_val = str(round(fval, 3))
         sensors.append({
-            "label": label, "value": round(float(val), 3),
+            "label": label, "value": disp_val,
             "unit": unit, "status": status,
             "normal": range_str,
             "dev": dev,
         })
 
-    # ── SECOM 異常指標 ────────────────────────────────────────────────────────
+    # ── SECOM → 轉換成單一可讀的「SPC 製程管制」感測器 ──────────────────────
     scenario_type = state.get("scenario_type", "")
     secom_key = next((v for k, v in _SCENARIO_TO_SECOM.items()
                       if k in scenario_type.lower()), None)
-    secom = []
-    used_ids = set()
+    secom = []   # 保持空陣列，不再顯示 SECOM 格子
+
+    # 情境對應的感測器標籤
+    _SECOM_LABELS = {
+        "alignment": "對準偏差",
+        "cooling":   "冷卻系統偏差",
+        "lens":      "鏡組品質偏差",
+        "laser":     "光源穩定偏差",
+        "stage":     "載台位置偏差",
+        "handler":   "傳送系統偏差",
+    }
+    sensor_label = _SECOM_LABELS.get(secom_key, "製程異常偏差")
+
     if secom_key and secom_key in _SECOM_FEATURES:
-        for fid, sigma in _SECOM_FEATURES[secom_key]:
-            noisy = sigma + random.uniform(-0.12, 0.12)
-            sev = "critical" if abs(noisy) > 2.5 else \
-                  "warning"  if abs(noisy) > 1.5 else "normal"
-            secom.append({"feature": f"Feature_{fid:03d}",
-                          "sigma": round(noisy, 2), "severity": sev})
-            used_ids.add(fid)
-    # 補充正常 feature 作背景參考
-    pool = [i for i in range(1, 591) if i not in used_ids]
-    for fid in random.sample(pool, min(4, len(pool))):
-        secom.append({"feature": f"Feature_{fid:03d}",
-                      "sigma": round(random.uniform(-0.7, 0.7), 2),
-                      "severity": "normal"})
-    secom.sort(key=lambda x: abs(x["sigma"]), reverse=True)
-    secom = secom[:8]
+        fault_sigmas = [abs(sigma + random.uniform(-0.12, 0.12))
+                        for _, sigma in _SECOM_FEATURES[secom_key]]
+        max_sigma = max(fault_sigmas) if fault_sigmas else 0.0
+    else:
+        max_sigma = random.uniform(0.1, 0.5)   # 無故障時：正常波動
+
+    spc_status = "critical" if max_sigma > 2.5 else \
+                 "warning"  if max_sigma > 1.5 else "normal"
+    spc_text   = "超出規格" if spc_status == "critical" else \
+                 "接近警告" if spc_status == "warning"  else "正常範圍"
+    sensors.append({
+        "label":  sensor_label,
+        "value":  str(round(max_sigma, 2)),
+        "unit":   "σ",
+        "status": spc_status,
+        "normal": "< 1.5σ（正常）",
+        "dev":    spc_text,
+    })
 
     # ── canvas texture 用的顏色陣列 ───────────────────────────────────────────
     SYS_ORDER = ["cooling_system", "light_source", "lens_system", "wafer_stage",
@@ -404,13 +424,22 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
             if not _session["started"]:
                 self._json({"ok": False, "ai_msg": ""}); return
             snap = dict(_session)
+        prev_len = len(snap["msgs"] or [])
         eq, dash, eq_st, msgs, log = _system_instance.auto_progress(
             snap["eq"], snap["dash"], snap["eq_st"], snap["msgs"], snap["log"])
         with _session_lock:
             _session.update(eq=eq, dash=dash, eq_st=eq_st, msgs=msgs, log=log)
+        # 只在 auto_progress 實際新增了訊息時才回傳 ai_msg，
+        # 避免把 conversation_history 最後一條舊訊息重複傳給前端
+        new_ai_msg = ""
+        if len(msgs or []) > prev_len:
+            new_ai_msg = self._latest_ai(msgs)
+        new_sys_msg = ""
+        if len(msgs or []) > prev_len:
+            new_sys_msg = self._latest_sys(msgs)
         self._json({"ok": True,
-                    "ai_msg": self._latest_ai(msgs),
-                    "sys_msg": self._latest_sys(msgs),
+                    "ai_msg": new_ai_msg,
+                    "sys_msg": new_sys_msg,
                     "msgs": self._msgs_to_list(msgs)})
 
     def _api_hmi(self):
@@ -541,12 +570,25 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
             pm = _system_instance.proactive_mentor
             pf = pm.pending_followup if pm else None
             qa_pending = bool(pf)  # 所有追問都遮擋，回答後才解除
+        # 反問加/扣分：取出 pending_score_bonus，套用到 _action_session.score
+        bonus = getattr(_system_instance, 'pending_score_bonus', 0)
+        if bonus != 0 and _action_session:
+            _action_session.score = max(0, min(100, _action_session.score + bonus))
+            _system_instance.pending_score_bonus = 0
+        # 同步 ActionSession 分數到 ProactiveMentor，讓追問難度與得分一致
+        if _action_session and _system_instance and \
+                hasattr(_system_instance, 'proactive_mentor') and \
+                _system_instance.proactive_mentor:
+            _system_instance.proactive_mentor.action_score = _action_session.score
+            _system_instance.proactive_mentor._update_difficulty()
         # 情境結束旗標
         session_ended = not bool(_system_instance.session_active)
         sys_msg = self._latest_sys(msgs)
+        current_score = _action_session.score if _action_session else None
         self._json({"ok": True, "ai_msg": ai_reply, "qa_pending": qa_pending,
                     "session_ended": session_ended, "sys_msg": sys_msg,
-                    "msgs": self._msgs_to_list(msgs)})
+                    "msgs": self._msgs_to_list(msgs),
+                    **({"score": current_score} if current_score is not None else {})})
 
     # ── Physics API ──────────────────────────────────────────────────────────
     def _api_exposure(self):
@@ -625,9 +667,10 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
         fault_type = data.get("fault_type", None)
 
         with _action_session_lock:
-            # 若故障類型改變或尚無 session，初始化新 session
+            # 只在尚無 session 時建立；若 session 已存在則保留（不因 fault_type 不符就重建，
+            # 避免 _detectFaultInText 誤加關鍵字導致 _activeFaults 混入其他類型、分數歸零）
             if fault_type and fault_type in SOP_DEFINITIONS:
-                if _action_session is None or _action_session.fault_type != fault_type:
+                if _action_session is None:
                     _action_session = ActionSession(fault_type)
 
             if _action_session is None:
@@ -649,17 +692,11 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
                 _system_instance.ai_mentor.set_teaching_mode(
                     mode_map.get(adaptive_mode, 'standard'))
 
-            # ── 2. 同步 ProactiveMentor.difficulty（讓 Socratic 追問一致）──
+            # ── 2. 同步 ProactiveMentor 分數與難度（依 0~100 分，非 adaptive_mode）──
             if _system_instance and hasattr(_system_instance, 'proactive_mentor') \
-                    and _system_instance.proactive_mentor:
-                difficulty_map = {
-                    'challenge':   'challenge',
-                    'standard':    'standard',
-                    'scaffolding': 'easy',
-                    'remedial':    'easy',
-                }
-                _system_instance.proactive_mentor.difficulty = \
-                    difficulty_map.get(adaptive_mode, 'standard')
+                    and _system_instance.proactive_mentor and _action_session:
+                _system_instance.proactive_mentor.action_score = _action_session.score
+                _system_instance.proactive_mentor._update_difficulty()
 
             # ── 3. 操作錯誤時用 LLM 生成自然回饋（替換靜態模板）────────────
             if not result.get("correct") and _system_instance \
@@ -736,7 +773,7 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
 
     def _api_hint(self):
         """POST /api/hint  { fault_type }
-        操作者求助學長 → 扣 5 分 → 依自適應模式給提示
+        操作者求助學長 → 扣 10 分 → 依自適應模式給提示
         """
         global _action_session
         if not _SOP_OK:
@@ -747,7 +784,7 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
 
         with _action_session_lock:
             if fault_type and fault_type in SOP_DEFINITIONS:
-                if _action_session is None or _action_session.fault_type != fault_type:
+                if _action_session is None:
                     _action_session = ActionSession(fault_type)
 
             if _action_session is None:
@@ -1098,7 +1135,7 @@ canvas{position:fixed;top:0;left:0;display:block;}
     <span id="fault-prog">—</span>
   </div>
   <div id="chat-msgs"><div class="msg ms">⏳ 等待訓練開始…</div></div>
-  <button id="hint-btn" onclick="askHint()" disabled>💬 求助學長（-5 分）</button>
+  <button id="hint-btn" onclick="askHint()" disabled>💬 求助學長（-10 分）</button>
   <div id="chat-input-row">
     <input id="ci" placeholder="問學長… (C 鍵)" />
     <button id="cs">送出</button>
@@ -1190,7 +1227,7 @@ canvas{position:fixed;top:0;left:0;display:block;}
         自行判斷處理順序。<br><br>
         <span style="color:#5a7a5a;font-size:11px;">▸ 橘色發光的零件是故障相關區域<br>
         ▸ 可按 <b>[C]</b> 與 AI 學長對話<br>
-        ▸「求助學長」可獲得提示（-5分）</span>
+        ▸「求助學長」可獲得提示（-10分）</span>
       </div>
       <div class="maint-complete" id="maint-complete">
         ✅ 故障排除完成！系統已恢復正常。
@@ -1739,7 +1776,7 @@ function openMaintenance(faultType){
     +'自行判斷處理順序。<br><br>'
     +'<span style="color:#5a7a5a;font-size:11px;">▸ 橘色發光的零件是故障相關區域<br>'
     +'▸ 可按 <b>[C]</b> 與 AI 學長對話<br>'
-    +'▸「求助學長」可獲得提示（-5分）</span></div>';
+    +'▸「求助學長」可獲得提示（-10分）</span></div>';
   document.getElementById('hint-btn').disabled=false;
   addMsg('sys','⚠ 偵測到故障：<b>'+sop.title+'</b>。請自行判斷處理步驟。');
 }
@@ -1964,7 +2001,11 @@ function sendChat(txt){
   fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({text:txt})})
   .then(function(r){return r.json();})
-  .then(function(d){if(d.ai_msg)addMsg('ai',d.ai_msg);})
+  .then(function(d){
+    if(d.ai_msg)addMsg('ai',d.ai_msg);
+    if(d.score!==undefined)updateScore(d.score);
+    if(d.session_ended)showTrainingResult();
+  })
   .catch(function(e){addMsg('sys','⚠ 連線錯誤');})
   .finally(function(){$cs.disabled=false;});
 }

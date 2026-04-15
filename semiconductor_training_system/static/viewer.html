@@ -67,9 +67,6 @@ canvas{position:fixed;top:0;left:0;display:block;}
 #start-screen h2{font-size:11px;color:#ccaa44;letter-spacing:2px;text-align:center;margin:0;}
 .hint{font-size:11px;color:#ccaa66;text-align:center;line-height:2.1;max-width:440px;}
 .hint b{color:#ffdd55;}
-#diff-row{display:flex;align-items:center;gap:12px;}
-#difficulty{background:#1a1000;border:1px solid #664400;color:#ffcc44;
-  padding:8px 18px;border-radius:6px;font:13px Consolas,monospace;}
 #start-btn{background:linear-gradient(135deg,#332200,#664400);
   border:2px solid #ffaa00;color:#ffdd55;padding:14px 44px;border-radius:8px;
   font:15px Consolas,monospace;cursor:pointer;letter-spacing:2px;transition:.2s;}
@@ -254,6 +251,50 @@ canvas{position:fixed;top:0;left:0;display:block;}
 #ai-thinking span:nth-child(2){animation-delay:.2s;}
 #ai-thinking span:nth-child(3){animation-delay:.4s;}
 @keyframes thinking-dot{0%,80%,100%{opacity:.2;}40%{opacity:1;}}
+
+/* ── AI 思考中：3D 視窗遮罩 + 箭頭提示 ── */
+#ai-thinking-mask{
+  display:none; position:fixed; top:0; left:0;
+  width:calc(100% - 300px); /* 3D 視窗寬度（右側留給 chat panel）*/
+  height:100%; z-index:800;
+  background:rgba(0,0,0,0.35);
+  pointer-events:all;  /* 吸收所有點擊，避免誤操作 */
+  cursor:not-allowed;
+}
+#ai-thinking-arrow{
+  display:none; position:fixed; z-index:801;
+  /* 預設定位：中右方，指向右側 chat panel */
+  right:310px; top:50%; transform:translateY(-50%);
+  display:none; flex-direction:column; align-items:center; gap:8px;
+  pointer-events:none;
+}
+#ai-thinking-arrow .arrow-label{
+  color:#c0a8ff; font-size:13px; font-weight:600;
+  background:rgba(26,13,42,0.92); border:1px solid #5a2a8c;
+  padding:6px 14px; border-radius:20px;
+  text-shadow:0 0 8px #8040ff;
+  white-space:nowrap;
+}
+#ai-thinking-arrow .arrow-body{
+  display:flex; align-items:center; gap:0;
+  animation:arrow-bounce 0.7s ease-in-out infinite alternate;
+}
+#ai-thinking-arrow .arrow-shaft{
+  width:50px; height:4px;
+  background:linear-gradient(90deg,rgba(160,80,255,0),#a050ff);
+  border-radius:2px;
+}
+#ai-thinking-arrow .arrow-head{
+  width:0; height:0;
+  border-top:10px solid transparent;
+  border-bottom:10px solid transparent;
+  border-left:18px solid #a050ff;
+  filter:drop-shadow(0 0 6px #a050ff);
+}
+@keyframes arrow-bounce{
+  from{transform:translateX(0);}
+  to{transform:translateX(10px);}
+}
 #chat-input-row{border-top:1px solid #1a3a5c;padding:10px;display:flex;gap:8px;flex-shrink:0;}
 #ci{flex:1;background:#0a1220;border:1px solid #2a4a6b;color:#a0d0ff;
   padding:8px 10px;border-radius:6px;font:11px Consolas,monospace;outline:none;}
@@ -322,9 +363,6 @@ canvas{position:fixed;top:0;left:0;display:block;}
 .sensor-val{font-weight:bold;font-family:Consolas,monospace;}
 .sensor-norm{color:#3a5a7c;font-size:10px;}
 .sensor-dev{font-size:10px;font-weight:bold;}
-.secom-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
-.secom-feat{background:rgba(10,18,32,.8);border:1px solid transparent;
-  border-radius:6px;padding:8px 10px;text-align:center;}
 .hmi-info-row{display:flex;justify-content:space-between;font-size:11px;
   padding:4px 0;border-bottom:1px solid #0d1b2a;}
 /* ── Maintenance Panel ── */
@@ -435,7 +473,8 @@ canvas{position:fixed;top:0;left:0;display:block;}
   </div>
   <div id="chat-msgs"><div class="msg ms">⏳ 等待訓練開始…</div></div>
   <div id="ai-thinking">學長：<span>●</span><span>●</span><span>●</span> 思考中…</div>
-  <button id="hint-btn" onclick="askHint()" disabled>💬 求助學長（-5 分）</button>
+  <button id="hint-btn" onclick="askHint()" disabled>💬 求助學長（-10 分）</button>
+
   <div id="chat-input-row">
     <input id="ci" placeholder="問學長… (C 鍵)" />
     <button id="cs">送出</button>
@@ -443,6 +482,16 @@ canvas{position:fixed;top:0;left:0;display:block;}
   <div id="chat-hint">C:對話 | Enter:送出 | ESC:返回操作</div>
   <div id="status-hdr">📋 系統狀態</div>
   <div id="status-msgs"><div class="mss">⏳ 等待訓練開始…</div></div>
+</div>
+
+<!-- AI 思考中遮罩 + 箭頭提示 -->
+<div id="ai-thinking-mask"></div>
+<div id="ai-thinking-arrow">
+  <div class="arrow-label">AI 學長思考中，請稍等…</div>
+  <div class="arrow-body">
+    <div class="arrow-shaft"></div>
+    <div class="arrow-head"></div>
+  </div>
 </div>
 
 <!-- Loading -->
@@ -463,14 +512,6 @@ canvas{position:fixed;top:0;left:0;display:block;}
       <b>點擊「進入機器」</b> 後將進入機器內部第一人稱視角<br>
       <b>WASD</b> 移動 &nbsp;|&nbsp; <b>滑鼠</b> 旋轉視角 &nbsp;|&nbsp; <b>E</b> 靠近部件檢查<br>
       <b>C</b> 與 AI 學長對話 &nbsp;|&nbsp; <b>ESC</b> 暫停
-    </div>
-    <div id="diff-row">
-      <label style="color:#aa8833;font-size:12px;">訓練難度：</label>
-      <select id="difficulty">
-        <option value="easy">簡單</option>
-        <option value="medium" selected>中等</option>
-        <option value="hard">困難</option>
-      </select>
     </div>
     <button id="start-btn">▶ 進入機器內部</button>
   </div>
@@ -552,7 +593,7 @@ canvas{position:fixed;top:0;left:0;display:block;}
         自行判斷處理順序。<br><br>
         <span style="color:#5a7a5a;font-size:11px;">▸ 橘色發光的零件是故障相關區域<br>
         ▸ 可按 <b>[C]</b> 與 AI 學長對話<br>
-        ▸「求助學長」可獲得提示（-5分）</span>
+        ▸「求助學長」可獲得提示（-10分）</span>
       </div>
       <div class="maint-complete" id="maint-complete">
         ✅ 故障排除完成！系統已恢復正常。
@@ -1139,7 +1180,7 @@ function openMaintenance(faultType){
     +'自行判斷處理順序。<br><br>'
     +'<span style="color:#5a7a5a;font-size:11px;">▸ 橘色發光的零件是故障相關區域<br>'
     +'▸ 可按 <b>[C]</b> 與 AI 學長對話<br>'
-    +'▸「求助學長」可獲得提示（-5分）</span></div>';
+    +'▸「求助學長」可獲得提示（-10分）</span></div>';
   document.getElementById('hint-btn').disabled=false;
   addMsg('sys','⚠ 偵測到故障：<b>'+sop.title+'</b>。請自行判斷處理步驟。');
 }
@@ -1155,7 +1196,7 @@ function updateFaultProgress(current,total){
 function closeMaintenance(){
   maintOpen=false;
   document.getElementById('maint-overlay').style.display='none';
-  if(gameStarted&&insideMode) controls.lock();
+  if(gameStarted&&insideMode&&!_qaMode&&!_aiThinking) controls.lock();
 }
 window.closeMaintenance=closeMaintenance;
 
@@ -1343,7 +1384,10 @@ var _FAULT_KEYWORDS={
   focus_drift:['焦距漂移超規','focus drift','ALM-FOCUS'],
 };
 // 注意：關鍵字僅用於初始偵測警報，不應觸發已清除的故障重新激活
+// 若已有活躍故障（_activeFaults 非空），不再加入新的 fault type，避免混入干擾
 function _detectFaultInText(text){
+  // 已有活躍故障時不偵測，防止 AI 回覆中的關鍵字混入不同故障類型
+  if(Object.keys(_activeFaults).length > 0) return;
   var lower=text.toLowerCase();
   Object.keys(_FAULT_KEYWORDS).forEach(function(ft){
     _FAULT_KEYWORDS[ft].forEach(function(kw){
@@ -1427,14 +1471,35 @@ function addMsg(role,text){
 }
 function addSysMsg(text){addMsg('sys',text);}
 var $aiThinking=document.getElementById('ai-thinking');
+var $aiMask=document.getElementById('ai-thinking-mask');
+var $aiArrow=document.getElementById('ai-thinking-arrow');
+var _aiThinking=false;
+var _hintWasEnabled=false;  // 記住思考前 hint-btn 是否可用
 function _showThinking(){
+  _aiThinking=true;
+  var $hb=document.getElementById('hint-btn');
+  _hintWasEnabled=!$hb.disabled;
+  $hb.disabled=true;
   $aiThinking.style.display='block';
+  $aiMask.style.display='block';
+  $aiArrow.style.display='flex';
+  if(controls.isLocked) controls.unlock();
   $msgs.scrollTop=$msgs.scrollHeight;
 }
-function _hideThinking(){ $aiThinking.style.display='none'; }
+function _hideThinking(){
+  _aiThinking=false;
+  $aiThinking.style.display='none';
+  $aiMask.style.display='none';
+  $aiArrow.style.display='none';
+  // 恢復 hint-btn 狀態（若後端邏輯中途禁用則不強制重啟）
+  if(_hintWasEnabled){
+    var $hb=document.getElementById('hint-btn');
+    if($hb.disabled) $hb.disabled=false;
+  }
+}
 
 function sendChat(txt){
-  txt=txt.trim();if(!txt||!gameStarted)return;
+  txt=txt.trim();if(!txt||!gameStarted||_aiThinking)return;
   addMsg('user',txt);$ci.value='';$cs.disabled=true;
   _showThinking();
   fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -1496,10 +1561,10 @@ function openInspect(label,action){
 }
 function closeInspect(){
   inspecting=false;$ip.style.display='none';
-  if(gameStarted&&!hmiOpen)controls.lock();
+  if(gameStarted&&!hmiOpen&&!_qaMode&&!_aiThinking)controls.lock();
 }
 function sendAction(component,action){
-  if(!gameStarted)return;
+  if(!gameStarted||_aiThinking)return;
   addMsg('user','['+component+'] '+action);
   _setOpMode(false);
   _showThinking();
@@ -1552,7 +1617,7 @@ function sendAction(component,action){
   });
 }
 function askHint(){
-  if(!gameStarted)return;
+  if(!gameStarted||_aiThinking)return;
   _showThinking();
   // 暫停 tick，避免等待期間 tick 把舊訊息重複顯示
   var savedTick=tickTimer;
@@ -1638,7 +1703,7 @@ function showHMIOverlay(){
 }
 function closeHMI(){
   hmiOpen=false;$hmiOverlay.style.display='none';
-  if(gameStarted)controls.lock();
+  if(gameStarted&&!_qaMode)controls.lock();
 }
 window.closeHMI=closeHMI;
 
@@ -1873,20 +1938,7 @@ function renderHMI(d){
     html+='</div>';
   });
   html+='</div>';
-  // SECOM
-  if(d.secom&&d.secom.length){
-    html+='<div class="hmi-section"><div class="hmi-section-title">🔬 SECOM 製程參數異常指標</div>';
-    html+='<div class="secom-grid">';
-    d.secom.forEach(function(f){
-      var col=f.severity==='critical'?'#ff4444':f.severity==='warning'?'#ffaa00':'#44cc88';
-      var sig=(f.sigma>=0?'+':'')+f.sigma+'σ';
-      html+='<div class="secom-feat" style="border-color:'+col+'33">';
-      html+='<div style="color:#5a8a9a;font-size:10px;">'+f.feature+'</div>';
-      html+='<div style="color:'+col+';font-size:14px;font-weight:bold;margin-top:3px;">'+sig+'</div>';
-      html+='</div>';
-    });
-    html+='</div></div>';
-  }
+
   // ERROR Log
   html+='<div class="hmi-section">';
   html+='<div class="hmi-section-title" style="color:'+(d.alarms&&d.alarms.length?'#ff6644':'#5a8a9a')+'">📋 系統錯誤日誌 (ERROR Log)</div>';
@@ -1934,7 +1986,7 @@ controls.addEventListener('lock',function(){
   $xhair.style.left=(CW/2-12)+'px';$xhair.style.top='calc(50% - 12px)';
 });
 controls.addEventListener('unlock',function(){
-  if(gameStarted&&!chatFocus&&!inspecting&&!hmiOpen){
+  if(gameStarted&&!chatFocus&&!inspecting&&!hmiOpen&&!_qaMode){
     $pause.style.display='flex';$pause.style.width=CW+'px';$pause.style.height='100vh';
     $xhair.style.display='none';
   }
@@ -1942,7 +1994,6 @@ controls.addEventListener('unlock',function(){
 
 // ── Start button ──────────────────────────────────────────────────────────────
 document.getElementById('start-btn').addEventListener('click',function(){
-  var diff=document.getElementById('difficulty').value;
   document.getElementById('start-btn').textContent='⏳ 載入中…';
   // 立即設定遊戲場景（同步），讓 controls.lock() 能在 user gesture 內執行
   gameStarted=true;
@@ -1957,7 +2008,7 @@ document.getElementById('start-btn').addEventListener('click',function(){
   controls.lock(); // 必須在同步 user-gesture 內呼叫，否則瀏覽器拒絕 Pointer Lock
   // 非同步取得 AI 訊息（不影響遊戲啟動）
   fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({difficulty:diff})})
+    body:JSON.stringify({})})
   .then(function(r){return r.json();})
   .then(function(d){
     if(d.ai_msg)_addAiMsgDedup(d.ai_msg);
@@ -1973,23 +2024,23 @@ document.getElementById('start-btn').addEventListener('click',function(){
 });
 // 點擊畫布也可重新鎖定指標（例如 ESC 後重新進入）
 renderer.domElement.addEventListener('click',function(){
-  if(gameStarted&&!controls.isLocked&&!hmiOpen&&!maintOpen&&!inspecting&&!_qaMode){
+  if(gameStarted&&!controls.isLocked&&!hmiOpen&&!maintOpen&&!inspecting&&!_qaMode&&!_aiThinking){
     controls.lock();
   }
 });
-document.getElementById('resume-btn').addEventListener('click',function(){controls.lock();});
+document.getElementById('resume-btn').addEventListener('click',function(){if(!_qaMode&&!_aiThinking)controls.lock();});
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
 document.addEventListener('keydown',function(e){
   if(chatFocus)return;
   if(hmiOpen&&e.key==='Escape'){closeHMI();return;}
   switch(e.code){
-    case 'KeyW':case 'ArrowUp':    if(!_qaMode)moveF=true;break;
-    case 'KeyS':case 'ArrowDown':  if(!_qaMode)moveB=true;break;
-    case 'KeyA':case 'ArrowLeft':  if(!_qaMode)moveL=true;break;
-    case 'KeyD':case 'ArrowRight': if(!_qaMode)moveR=true;break;
+    case 'KeyW':case 'ArrowUp':    if(!_qaMode&&!_aiThinking)moveF=true;break;
+    case 'KeyS':case 'ArrowDown':  if(!_qaMode&&!_aiThinking)moveB=true;break;
+    case 'KeyA':case 'ArrowLeft':  if(!_qaMode&&!_aiThinking)moveL=true;break;
+    case 'KeyD':case 'ArrowRight': if(!_qaMode&&!_aiThinking)moveR=true;break;
     case 'KeyE':
-      if(_qaMode) break;  // QA 問答模式中禁止所有設備互動
+      if(_qaMode||_aiThinking) break;  // QA 問答模式或 AI 思考中禁止設備互動
       if(hmiOpen){closeHMI();break;}
       if(maintOpen){closeMaintenance();break;}
       if(inspecting){closeInspect();break;}
@@ -2031,8 +2082,8 @@ document.addEventListener('keydown',function(e){
         }
       }
       break;
-    case 'KeyC':$ci.focus();break;
-    case 'KeyR':if(gameStarted&&!controls.isLocked)controls.lock();break;
+    case 'KeyC':if(!_aiThinking)$ci.focus();break;
+    case 'KeyR':if(gameStarted&&!controls.isLocked&&!_qaMode&&!_aiThinking)controls.lock();break;
   }
 });
 document.addEventListener('keyup',function(e){
