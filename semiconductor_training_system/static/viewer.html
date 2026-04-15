@@ -2196,14 +2196,14 @@ var _labelSprites=[];  // [{div, worldPos}]
 // 每個標籤的世界座標偏移 [dx, dy, dz]，避免擋住零件和動畫
 // dx=左右, dy=上下, dz=前後（正值靠近觀察者）
 var _LABEL_OFFSET={
-  'Label_Stage':       [ 0.00, 0.28,  0],   // Wafer Stage — 往上確保高於載台
-  'Label_POB':         [ 0.35, 0.50,  0],   // Projection Optics — 右移+高，不擋鏡組頂部
-  'Label_Illum':       [-0.20, 0.40,  0],   // Illumination System — 左移，在桶上方
-  'Label_Laser':       [ 0.20, 0.35,  0],   // 193nm Laser — 右移避開照明系統
-  'Label_Immersion':   [-0.10, 0.35,  0],   // Immersion Hood — 稍左，高於罩體
-  'Label_FOUP':        [ 0.00, 0.35,  0],   // FOUP Port — 正上方
-  'Reticle_Stage_Mesh':[-0.40, 0.18,  0],   // Reticle Stage — 左移，不與 POB 標示重疊
-  'Cabinet_Main':      [ 0.05, 0.45,  0],   // Control System — 正上方
+  'Label_Stage':       [ 0,    0.05,  0],
+  'Label_POB':         [ 0,    0.05,  0],
+  'Label_Illum':       [ 0,    0.05,  0],
+  'Label_Laser':       [ 0,    0.05,  0],
+  'Label_Immersion':   [ 0,    0.05,  0],
+  'Label_FOUP':        [ 0,    0.05,  0],
+  'Reticle_Stage_Mesh':[ 0,    0.08,  0],
+  'Cabinet_Main':      [ 0,    0.10,  0],
 };
 
 function _refreshLabels(meshMap){
@@ -2294,7 +2294,11 @@ function _buildOutlines(meshMap){
 }
 
 function createProcObjects(model){
-  model.traverse(function(o){if(o.name)sceneMeshMap[o.name]=o;});
+  model.traverse(function(o){
+    if(o.name) sceneMeshMap[o.name]=o;
+    // GLB 裡的 Label_* 節點可能是可見幾何體，立刻隱藏避免與 HTML 標籤重疊
+    if(o.name && o.name.startsWith('Label_')) o.visible=false;
+  });
   // _refreshLabels 和 _buildOutlines 移到函式末端，確保動態 mesh 已加入 sceneMeshMap
 
   // ── 玻璃外框擴展，容納照明系統與雷射元件（sceneMeshMap 已填充）────────────
