@@ -6,11 +6,10 @@
 html,body{width:100%;height:100%;overflow:hidden;background:#050d1a;
   font-family:Consolas,"Courier New",monospace;color:#cde;}
 canvas{position:fixed;top:0;left:0;display:block;}
-/* ── 3D 零件名稱標籤（對話框樣式，箭頭指向零件）── */
+/* ── 3D 零件名稱標籤（對話框樣式，方向性箭頭）── */
 #label-layer{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;}
 .eq-label{
   position:absolute;
-  transform:translate(-50%, calc(-100% - 14px));
   background:rgba(6,14,42,0.93);
   border:2px solid rgba(100,180,255,0.85);
   border-radius:10px;
@@ -26,29 +25,27 @@ canvas{position:fixed;top:0;left:0;display:block;}
   user-select:none;
   box-shadow:0 2px 14px rgba(50,130,255,0.35);
 }
-/* 外框箭頭（邊框顏色三角形）*/
-.eq-label::after{
-  content:'';
-  position:absolute;
-  bottom:-13px;
-  left:50%;
-  transform:translateX(-50%);
-  border-left:9px solid transparent;
-  border-right:9px solid transparent;
-  border-top:13px solid rgba(100,180,255,0.85);
-}
-/* 內填箭頭（背景顏色三角形，略小）*/
-.eq-label::before{
-  content:'';
-  position:absolute;
-  bottom:-10px;
-  left:50%;
-  transform:translateX(-50%);
-  border-left:7px solid transparent;
-  border-right:7px solid transparent;
-  border-top:10px solid rgba(6,14,42,0.93);
-  z-index:1;
-}
+/* ── 箭頭方向 CSS（::after=外框色, ::before=填充色）── */
+/* 預設：箭頭朝下，標示在錨點正上方 */
+.eq-label.dir-top{transform:translate(-50%, calc(-100% - 13px));}
+.eq-label.dir-top::after{content:'';position:absolute;bottom:-13px;left:50%;transform:translateX(-50%);border-left:9px solid transparent;border-right:9px solid transparent;border-top:13px solid rgba(100,180,255,0.85);}
+.eq-label.dir-top::before{content:'';position:absolute;bottom:-10px;left:50%;transform:translateX(-50%);border-left:7px solid transparent;border-right:7px solid transparent;border-top:10px solid rgba(6,14,42,0.93);z-index:1;}
+/* 右上：箭頭朝左下，標示在錨點右上方 */
+.eq-label.dir-tr{transform:translate(13px, calc(-100% - 13px));}
+.eq-label.dir-tr::after{content:'';position:absolute;bottom:-13px;left:0px;border-right:13px solid rgba(100,180,255,0.85);border-top:9px solid transparent;border-bottom:9px solid transparent;}
+.eq-label.dir-tr::before{content:'';position:absolute;bottom:-10px;left:3px;border-right:10px solid rgba(6,14,42,0.93);border-top:7px solid transparent;border-bottom:7px solid transparent;z-index:1;}
+/* 左上：箭頭朝右下，標示在錨點左上方 */
+.eq-label.dir-tl{transform:translate(calc(-100% - 13px), calc(-100% - 13px));}
+.eq-label.dir-tl::after{content:'';position:absolute;bottom:-13px;right:0px;border-left:13px solid rgba(100,180,255,0.85);border-top:9px solid transparent;border-bottom:9px solid transparent;}
+.eq-label.dir-tl::before{content:'';position:absolute;bottom:-10px;right:3px;border-left:10px solid rgba(6,14,42,0.93);border-top:7px solid transparent;border-bottom:7px solid transparent;z-index:1;}
+/* 右：箭頭朝左，標示在錨點右方 */
+.eq-label.dir-right{transform:translate(13px, -50%);}
+.eq-label.dir-right::after{content:'';position:absolute;top:50%;left:-13px;transform:translateY(-50%);border-right:13px solid rgba(100,180,255,0.85);border-top:9px solid transparent;border-bottom:9px solid transparent;}
+.eq-label.dir-right::before{content:'';position:absolute;top:50%;left:-10px;transform:translateY(-50%);border-right:10px solid rgba(6,14,42,0.93);border-top:7px solid transparent;border-bottom:7px solid transparent;z-index:1;}
+/* 左：箭頭朝右，標示在錨點左方 */
+.eq-label.dir-left{transform:translate(calc(-100% - 13px), -50%);}
+.eq-label.dir-left::after{content:'';position:absolute;top:50%;right:-13px;transform:translateY(-50%);border-left:13px solid rgba(100,180,255,0.85);border-top:9px solid transparent;border-bottom:9px solid transparent;}
+.eq-label.dir-left::before{content:'';position:absolute;top:50%;right:-10px;transform:translateY(-50%);border-left:10px solid rgba(6,14,42,0.93);border-top:7px solid transparent;border-bottom:7px solid transparent;z-index:1;}
 /* 標題標籤（機型名稱，固定在畫面頂部）*/
 .eq-label-title{
   position:fixed;
@@ -2179,52 +2176,59 @@ var beamPtLight=null;
 var procElapsed=0;
 
 // ── DOM 標籤系統（瀏覽器原生字型渲染，完全清晰）────────────────────────────────
-var _LABEL_TEXT={
-  'Label_Stage':       'Wafer Stage',
-  'Label_POB':         'Projection Optics',
-  'Label_Illum':       'Illumination System',
-  'Label_Laser':       '193nm ArF Laser',
-  'Label_Immersion':   'Immersion Hood',
-  'Label_FOUP':        'FOUP Port',
-  // 以下使用實際 mesh 為錨點（沒有對應 Label_ 節點）
-  'Reticle_Stage_Mesh':'Reticle Stage',
-  'Cabinet_Main':      'Control System',
+// text: 顯示文字, dir: 箭頭方向 top/tr/tl/right/left
+// 錨點 = Label_* 節點世界座標 + _LABEL_OFFSET（箭頭尖端所在位置）
+// 對話框泡泡出現在錨點的 dir 方向
+var _LABEL_DEFS={
+  'Label_Stage':       { text:'Wafer Stage',         dir:'right' },
+  'Label_POB':         { text:'Projection Optics',   dir:'tl'    },
+  'Label_Illum':       { text:'Illumination System', dir:'right' },
+  'Label_Laser':       { text:'193nm ArF Laser',     dir:'right' },
+  'Label_Immersion':   { text:'Immersion Hood',      dir:'left'  },
+  'Label_FOUP':        { text:'FOUP Port',           dir:'top'   },
+  'Reticle_Stage_Mesh':{ text:'Reticle Stage',       dir:'tr'    },
+  'Cabinet_Main':      { text:'Control System',      dir:'top'   },
 };
+// 向下相容（_LABEL_TEXT 供外部使用）
+var _LABEL_TEXT={};
+Object.keys(_LABEL_DEFS).forEach(function(k){_LABEL_TEXT[k]=_LABEL_DEFS[k].text;});
 
 var _labelSprites=[];  // [{div, worldPos}]
 
 // 每個標籤的世界座標偏移 [dx, dy, dz]，避免擋住零件和動畫
 // dx=左右, dy=上下, dz=前後（正值靠近觀察者）
+// 錨點偏移：[dx, dy, dz]（世界座標，單位同模型）
+// 錨點 = 箭頭尖端，對話框出現在 dir 方向
 var _LABEL_OFFSET={
-  'Label_Stage':       [ 0,    0.05,  0],
-  'Label_POB':         [ 0,    0.05,  0],
-  'Label_Illum':       [ 0,    0.05,  0],
-  'Label_Laser':       [ 0,    0.05,  0],
-  'Label_Immersion':   [ 0,    0.05,  0],
-  'Label_FOUP':        [ 0,    0.05,  0],
-  'Reticle_Stage_Mesh':[ 0,    0.08,  0],
-  'Cabinet_Main':      [ 0,    0.10,  0],
+  'Label_Stage':       [ 0.05, 0.05,  0   ],  // Wafer Stage → 錨點在載台中上，泡泡朝右
+  'Label_POB':         [ 0,    0.25,  0   ],  // Projection Optics → 錨點在鏡組上段，泡泡朝左上
+  'Label_Illum':       [ 0,    0.05,  0   ],  // Illumination System → 錨點在桶側，泡泡朝右
+  'Label_Laser':       [ 0,    0.05,  0   ],  // 193nm ArF Laser → 錨點在雷射箱側，泡泡朝右
+  'Label_Immersion':   [ 0,    0.05,  0   ],  // Immersion Hood → 錨點在罩側，泡泡朝左
+  'Label_FOUP':        [ 0,    0.10,  0   ],  // FOUP Port → 錨點在埠上方，泡泡朝上
+  'Reticle_Stage_Mesh':[ 0,    0.05,  0   ],  // Reticle Stage → 錨點在台面，泡泡朝右上
+  'Cabinet_Main':      [ 0,    0.15,  0   ],  // Control System → 錨點在機櫃上，泡泡朝上
 };
 
 function _refreshLabels(meshMap){
   _labelSprites.forEach(function(item){item.div.remove();});
   _labelSprites=[];
   var layer=document.getElementById('label-layer');
-  Object.keys(_LABEL_TEXT).forEach(function(nm){
+  Object.keys(_LABEL_DEFS).forEach(function(nm){
     var node=meshMap[nm]; if(!node) return;
     // Label_* 是純定位節點可隱藏；實際 mesh 節點不能隱藏
     if(nm.startsWith('Label_')) node.visible=false;
+    var def=_LABEL_DEFS[nm];
     var wp=new THREE.Vector3();
     node.getWorldPosition(wp);
-    // 套用偏移
+    // 套用偏移（錨點 = 箭頭尖端位置）
     var off=_LABEL_OFFSET[nm]||[0,0,0];
     wp.x+=off[0]; wp.y+=off[1]; wp.z+=off[2];
     var div=document.createElement('div');
-    var isTitle=(nm==='Model_Label');
-    div.className=isTitle?'eq-label-title':'eq-label';
-    div.textContent=_LABEL_TEXT[nm];
+    div.className='eq-label dir-'+(def.dir||'top');
+    div.textContent=def.text;
     layer.appendChild(div);
-    _labelSprites.push({div:div, pos:wp, title:isTitle});
+    _labelSprites.push({div:div, pos:wp, title:false});
   });
 }
 
