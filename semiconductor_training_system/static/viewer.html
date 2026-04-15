@@ -6,24 +6,48 @@
 html,body{width:100%;height:100%;overflow:hidden;background:#050d1a;
   font-family:Consolas,"Courier New",monospace;color:#cde;}
 canvas{position:fixed;top:0;left:0;display:block;}
-/* ── 3D 零件名稱標籤（DOM 疊層，論文用）── */
+/* ── 3D 零件名稱標籤（對話框樣式，箭頭指向零件）── */
 #label-layer{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;}
 .eq-label{
   position:absolute;
-  transform:translate(-50%,-50%);
-  background:rgba(8,18,50,0.88);
-  border:2px solid rgba(100,180,255,0.90);
-  border-radius:8px;
-  padding:5px 16px;
-  color:#ffffff;
-  font-family:"Arial Black","Arial",sans-serif;
-  font-weight:900;
-  font-size:15px;
+  transform:translate(-50%, calc(-100% - 14px));
+  background:rgba(6,14,42,0.93);
+  border:2px solid rgba(100,180,255,0.85);
+  border-radius:10px;
+  padding:6px 14px;
+  color:#e8f4ff;
+  font-family:"Arial","sans-serif";
+  font-weight:700;
+  font-size:13px;
   letter-spacing:0.5px;
   white-space:nowrap;
-  text-shadow:0 0 8px rgba(80,160,255,0.8);
+  text-shadow:0 0 6px rgba(80,160,255,0.7);
   display:none;
   user-select:none;
+  box-shadow:0 2px 14px rgba(50,130,255,0.35);
+}
+/* 外框箭頭（邊框顏色三角形）*/
+.eq-label::after{
+  content:'';
+  position:absolute;
+  bottom:-13px;
+  left:50%;
+  transform:translateX(-50%);
+  border-left:9px solid transparent;
+  border-right:9px solid transparent;
+  border-top:13px solid rgba(100,180,255,0.85);
+}
+/* 內填箭頭（背景顏色三角形，略小）*/
+.eq-label::before{
+  content:'';
+  position:absolute;
+  bottom:-10px;
+  left:50%;
+  transform:translateX(-50%);
+  border-left:7px solid transparent;
+  border-right:7px solid transparent;
+  border-top:10px solid rgba(6,14,42,0.93);
+  z-index:1;
 }
 /* 標題標籤（機型名稱，固定在畫面頂部）*/
 .eq-label-title{
@@ -736,9 +760,7 @@ var MA={
   Illum_Barrel:'查看光源強度和穩定性',Label_Illum:'查看光源強度和穩定性',
   Laser_Box:'查看光源強度和穩定性',Laser_Vent:'查看光源強度和穩定性',
   Laser_Out:'查看光源強度和穩定性',Label_Laser:'查看光源強度和穩定性',
-  Beam_H1:'查看光源強度和穩定性',Beam_V1:'查看光源強度和穩定性',
-  Beam_H2:'查看光源強度和穩定性',Beam_V2:'查看光源強度和穩定性',
-  Beam_Spot:'查看光源強度和穩定性',Mirror1:'查看光源強度和穩定性',
+  Mirror1:'查看光源強度和穩定性',
   Mirror2:'查看光源強度和穩定性',Mirror3:'查看光源強度和穩定性',
   Immersion_Hood:'檢查冷卻水流量和溫度',Immersion_Supply:'檢查冷卻水流量和溫度',
   Immersion_Return:'檢查冷卻水流量和溫度',Label_Immersion:'檢查冷卻水流量和溫度',
@@ -756,7 +778,6 @@ var ML={
   POB_Barrel:'投影鏡組',POB_Top_Cap:'投影鏡組',POB_Bottom:'投影鏡組',Label_POB:'投影鏡組',
   Illum_Barrel:'照明系統',Label_Illum:'照明系統',
   Laser_Box:'雷射光源',Laser_Vent:'雷射光源',Laser_Out:'雷射光源',Label_Laser:'雷射光源',
-  Beam_H1:'DUV光束',Beam_V1:'DUV光束',Beam_H2:'DUV光束',Beam_V2:'DUV光束',Beam_Spot:'DUV光束',
   Mirror1:'反射鏡',Mirror2:'反射鏡',Mirror3:'反射鏡',
   Immersion_Hood:'液浸冷卻',Immersion_Supply:'液浸冷卻',
   Immersion_Return:'液浸冷卻',Label_Immersion:'液浸冷卻',
@@ -776,7 +797,6 @@ var DESC={
   '通風排氣':'維持機台內部氣體潔淨度，排除熱氣和化學氣體。',
   '控制系統':'即時監控和控制所有子系統的主控電腦，處理數千個感測器數據。',
   '晶圓傳送':'FOUP 介面和機械手臂，負責晶圓的自動裝卸，維持潔淨度和定位精度。',
-  'DUV光束':'深紫外線（248nm）光束傳輸路徑，需在氮氣環境中傳輸以避免能量衰減。',
   '反射鏡':'高精度反射鏡，用於光束折轉和準直，鍍膜反射率 >99%。',
   '控制面板':'設備主控制面板，顯示所有感測器即時數值、警報狀態及 SECOM 製程異常指標。'
 };
@@ -824,10 +844,6 @@ var COMPONENT_ACTIONS={
   '晶圓傳送手臂':{
     inspect:['確認晶圓傳送狀態','查看手臂馬達電流'],
     operate:['重新對準傳送手臂','檢查 End Effector']
-  },
-  'DUV光束':{
-    inspect:['查看光源強度和穩定性','確認光束穩定性'],
-    operate:['對準光束路徑','檢查光束擋板']
   },
   '反射鏡':{
     inspect:['查看光源強度和穩定性','確認反射率'],
@@ -2171,13 +2187,16 @@ var procElapsed=0;
 
 // ── DOM 標籤系統（瀏覽器原生字型渲染，完全清晰）────────────────────────────────
 var _LABEL_TEXT={
-  'Label_Stage':    'Wafer Stage',
-  'Label_POB':      'Projection Optics',
-  'Label_Illum':    'Illumination System',
-  'Label_Laser':    '193nm ArF DUV Laser',
-  'Label_Immersion':'Immersion Hood',
-  'Label_FOUP':     'FOUP Port',
-  'Label_Beam':     'Beam Path',
+  'Label_Stage':       'Wafer Stage',
+  'Label_POB':         'Projection Optics',
+  'Label_Illum':       'Illumination System',
+  'Label_Laser':       '193nm ArF DUV Laser',
+  'Label_Immersion':   'Immersion Hood',
+  'Label_FOUP':        'FOUP Port',
+  // 以下使用實際 mesh 為錨點（沒有對應 Label_ 節點）
+  'Reticle_Stage_Mesh':'光罩載台',
+  'Robot_Arm_Link_Mesh':'晶圓傳送手臂',
+  'Cabinet_Main':      '控制系統',
 };
 
 var _labelSprites=[];  // [{div, worldPos}]
@@ -2185,13 +2204,15 @@ var _labelSprites=[];  // [{div, worldPos}]
 // 每個標籤的世界座標偏移 [dx, dy, dz]，避免擋住零件和動畫
 // dx=左右, dy=上下, dz=前後（正值靠近觀察者）
 var _LABEL_OFFSET={
-  'Label_Stage':    [ 0,    0.05,  0],
-  'Label_POB':      [ 0,    0.08,  0],
-  'Label_Illum':    [ 0.28, 0.08,  0],   // 右移但不太遠
-  'Label_Laser':    [ 0,    0.08,  0],
-  'Label_Immersion':[ 0,    0.08,  0],
-  'Label_FOUP':     [-0.30, 0.08,  0],   // 往左，不擋 FOUP 本體
-  'Label_Beam':     [ 0,    0.08,  0],
+  'Label_Stage':       [ 0,    0.12,  0],
+  'Label_POB':         [ 0,    0.15,  0],
+  'Label_Illum':       [ 0.28, 0.15,  0],
+  'Label_Laser':       [ 0,    0.15,  0],
+  'Label_Immersion':   [ 0,    0.15,  0],
+  'Label_FOUP':        [-0.30, 0.15,  0],
+  'Reticle_Stage_Mesh':[ 0,    0.20,  0],
+  'Robot_Arm_Link_Mesh':[ 0,   0.18,  0],
+  'Cabinet_Main':      [ 0,    0.25,  0],
 };
 
 function _refreshLabels(meshMap){
@@ -2200,7 +2221,8 @@ function _refreshLabels(meshMap){
   var layer=document.getElementById('label-layer');
   Object.keys(_LABEL_TEXT).forEach(function(nm){
     var node=meshMap[nm]; if(!node) return;
-    node.visible=false;
+    // Label_* 是純定位節點可隱藏；實際 mesh 節點不能隱藏
+    if(nm.startsWith('Label_')) node.visible=false;
     var wp=new THREE.Vector3();
     node.getWorldPosition(wp);
     // 套用偏移
