@@ -764,7 +764,6 @@ var MA={
   Mirror2:'查看光源強度和穩定性',Mirror3:'查看光源強度和穩定性',
   Immersion_Hood:'檢查冷卻水流量和溫度',Immersion_Supply:'檢查冷卻水流量和溫度',
   Immersion_Return:'檢查冷卻水流量和溫度',Label_Immersion:'檢查冷卻水流量和溫度',
-  Duct_Top:'檢查真空系統壓力',Duct_Vent1:'檢查真空系統壓力',Duct_Vent2:'檢查真空系統壓力',
   Cabinet_Main:'查看控制系統狀態',Cabinet_Panel:'查看控制系統狀態',
   Screen:'查看控制系統狀態',Keyboard:'查看控制系統狀態',
   FOUP_Port:'確認晶圓傳送狀態',FOUP_Door:'確認晶圓傳送狀態',Label_FOUP:'確認晶圓傳送狀態',
@@ -781,7 +780,6 @@ var ML={
   Mirror1:'反射鏡',Mirror2:'反射鏡',Mirror3:'反射鏡',
   Immersion_Hood:'液浸冷卻',Immersion_Supply:'液浸冷卻',
   Immersion_Return:'液浸冷卻',Label_Immersion:'液浸冷卻',
-  Duct_Top:'通風排氣',Duct_Vent1:'通風排氣',Duct_Vent2:'通風排氣',
   Cabinet_Main:'控制系統',Cabinet_Panel:'控制系統',Screen:'控制系統',Keyboard:'控制系統',
   FOUP_Port:'晶圓傳送',FOUP_Door:'晶圓傳送',Label_FOUP:'晶圓傳送',
   HMI_Screen:'控制面板'
@@ -794,7 +792,6 @@ var DESC={
   '雷射光源':'KrF 準分子雷射（248nm），提供曝光所需深紫外線。能量穩定性直接影響線寬均一性。',
   '照明系統':'將雷射光整形均勻化，確保光罩面均勻照射。包含多組光學元件和快門。',
   '液浸冷卻':'液浸水冷系統，維持鏡組底部與晶圓間的超純水層。水溫需控制在 ±0.001°C。',
-  '通風排氣':'維持機台內部氣體潔淨度，排除熱氣和化學氣體。',
   '控制系統':'即時監控和控制所有子系統的主控電腦，處理數千個感測器數據。',
   '晶圓傳送':'FOUP 介面和機械手臂，負責晶圓的自動裝卸，維持潔淨度和定位精度。',
   '反射鏡':'高精度反射鏡，用於光束折轉和準直，鍍膜反射率 >99%。',
@@ -824,10 +821,6 @@ var COMPONENT_ACTIONS={
   '控制系統':{
     inspect:['查看控制系統狀態','查看系統日誌'],
     operate:['降低曝光dose','停止曝光','恢復曝光','執行校正']
-  },
-  '通風排氣':{
-    inspect:['確認壓力讀值','查看真空壓力','查看氣流量'],
-    operate:['關閉閥門','關閉 V-201','目視檢查管路接頭','更換 O-ring 密封圈','重新抽真空並確認壓力','確認完成']
   },
   '光罩載台':{
     inspect:['確認異常 field','查看光罩狀態','目視檢查光罩表面'],
@@ -2190,13 +2183,12 @@ var _LABEL_TEXT={
   'Label_Stage':       'Wafer Stage',
   'Label_POB':         'Projection Optics',
   'Label_Illum':       'Illumination System',
-  'Label_Laser':       '193nm ArF DUV Laser',
+  'Label_Laser':       '193nm ArF Laser',
   'Label_Immersion':   'Immersion Hood',
   'Label_FOUP':        'FOUP Port',
   // 以下使用實際 mesh 為錨點（沒有對應 Label_ 節點）
-  'Reticle_Stage_Mesh':'光罩載台',
-  'Robot_Arm_Link_Mesh':'晶圓傳送手臂',
-  'Cabinet_Main':      '控制系統',
+  'Reticle_Stage_Mesh':'Reticle Stage',
+  'Cabinet_Main':      'Control System',
 };
 
 var _labelSprites=[];  // [{div, worldPos}]
@@ -2204,15 +2196,14 @@ var _labelSprites=[];  // [{div, worldPos}]
 // 每個標籤的世界座標偏移 [dx, dy, dz]，避免擋住零件和動畫
 // dx=左右, dy=上下, dz=前後（正值靠近觀察者）
 var _LABEL_OFFSET={
-  'Label_Stage':       [ 0,    0.12,  0],
-  'Label_POB':         [ 0,    0.15,  0],
-  'Label_Illum':       [ 0.28, 0.15,  0],
-  'Label_Laser':       [ 0,    0.15,  0],
-  'Label_Immersion':   [ 0,    0.15,  0],
-  'Label_FOUP':        [-0.30, 0.15,  0],
-  'Reticle_Stage_Mesh':[ 0,    0.20,  0],
-  'Robot_Arm_Link_Mesh':[ 0,   0.18,  0],
-  'Cabinet_Main':      [ 0,    0.25,  0],
+  'Label_Stage':       [ 0.00, 0.28,  0],   // Wafer Stage — 往上確保高於載台
+  'Label_POB':         [ 0.35, 0.50,  0],   // Projection Optics — 右移+高，不擋鏡組頂部
+  'Label_Illum':       [-0.20, 0.40,  0],   // Illumination System — 左移，在桶上方
+  'Label_Laser':       [ 0.20, 0.35,  0],   // 193nm Laser — 右移避開照明系統
+  'Label_Immersion':   [-0.10, 0.35,  0],   // Immersion Hood — 稍左，高於罩體
+  'Label_FOUP':        [ 0.00, 0.35,  0],   // FOUP Port — 正上方
+  'Reticle_Stage_Mesh':[-0.40, 0.18,  0],   // Reticle Stage — 左移，不與 POB 標示重疊
+  'Cabinet_Main':      [ 0.05, 0.45,  0],   // Control System — 正上方
 };
 
 function _refreshLabels(meshMap){
@@ -2304,8 +2295,7 @@ function _buildOutlines(meshMap){
 
 function createProcObjects(model){
   model.traverse(function(o){if(o.name)sceneMeshMap[o.name]=o;});
-  _refreshLabels(sceneMeshMap);  // 重新渲染所有標籤
-  _buildOutlines(sceneMeshMap);  // 建立互動設備白框
+  // _refreshLabels 和 _buildOutlines 移到函式末端，確保動態 mesh 已加入 sceneMeshMap
 
   // ── 玻璃外框擴展，容納照明系統與雷射元件（sceneMeshMap 已填充）────────────
   (function(){
@@ -2642,6 +2632,13 @@ function createProcObjects(model){
   if(mixer){mixer.stopAllAction();mixer=null;}
 
   console.log('[OK] Proc objects built. efStart:',procObjs.efStart.x.toFixed(2),procObjs.efStart.z.toFixed(2),'→ efEnd:',procObjs.efEnd.x.toFixed(2),procObjs.efEnd.z.toFixed(2));
+
+  // 把動態生成的 mesh 加入 sceneMeshMap，才能讓標籤和 outline 正確綁定
+  sceneMeshMap['Reticle_Stage_Mesh']=rs;
+  sceneMeshMap['Reticle_Mesh']=rm;
+  sceneMeshMap['Robot_Arm_Link_Mesh']=rbLink;
+  _refreshLabels(sceneMeshMap);  // 建立所有零件標籤
+  _buildOutlines(sceneMeshMap);  // 建立互動設備白框（含動態 mesh）
 }
 
 // ── 製程順序動畫（32s 循環）──────────────────────────────────────────────────
