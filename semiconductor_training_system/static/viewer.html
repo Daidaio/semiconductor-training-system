@@ -759,8 +759,6 @@ var MA={
   Laser_Out:'查看光源強度和穩定性',Label_Laser:'查看光源強度和穩定性',
   Mirror1:'查看光源強度和穩定性',
   Mirror2:'查看光源強度和穩定性',Mirror3:'查看光源強度和穩定性',
-  Immersion_Hood:'檢查冷卻水流量和溫度',Immersion_Supply:'檢查冷卻水流量和溫度',
-  Immersion_Return:'檢查冷卻水流量和溫度',Label_Immersion:'檢查冷卻水流量和溫度',
   Cabinet_Main:'查看控制系統狀態',Cabinet_Panel:'查看控制系統狀態',
   Screen:'查看控制系統狀態',Keyboard:'查看控制系統狀態',
   FOUP_Port:'確認晶圓傳送狀態',FOUP_Door:'確認晶圓傳送狀態',Label_FOUP:'確認晶圓傳送狀態',
@@ -775,8 +773,6 @@ var ML={
   Illum_Barrel:'照明系統',Label_Illum:'照明系統',
   Laser_Box:'雷射光源',Laser_Vent:'雷射光源',Laser_Out:'雷射光源',Label_Laser:'雷射光源',
   Mirror1:'反射鏡',Mirror2:'反射鏡',Mirror3:'反射鏡',
-  Immersion_Hood:'液浸冷卻',Immersion_Supply:'液浸冷卻',
-  Immersion_Return:'液浸冷卻',Label_Immersion:'液浸冷卻',
   Cabinet_Main:'控制系統',Cabinet_Panel:'控制系統',Screen:'控制系統',Keyboard:'控制系統',
   FOUP_Port:'晶圓傳送',FOUP_Door:'晶圓傳送',Label_FOUP:'晶圓傳送',
   HMI_Screen:'控制面板'
@@ -788,7 +784,6 @@ var DESC={
   '投影鏡組':'核心光學系統，將光罩圖案縮小投影至晶圓。鏡組溫度變化 0.01°C 即可能造成對焦偏移。',
   '雷射光源':'KrF 準分子雷射（248nm），提供曝光所需深紫外線。能量穩定性直接影響線寬均一性。',
   '照明系統':'將雷射光整形均勻化，確保光罩面均勻照射。包含多組光學元件和快門。',
-  '液浸冷卻':'液浸水冷系統，維持鏡組底部與晶圓間的超純水層。水溫需控制在 ±0.001°C。',
   '控制系統':'即時監控和控制所有子系統的主控電腦，處理數千個感測器數據。',
   '晶圓傳送':'FOUP 介面和機械手臂，負責晶圓的自動裝卸，維持潔淨度和定位精度。',
   '反射鏡':'高精度反射鏡，用於光束折轉和準直，鍍膜反射率 >99%。',
@@ -806,10 +801,6 @@ var COMPONENT_ACTIONS={
   '雷射光源':{
     inspect:['確認偏差量','查看dose讀值','確認光束穩定性','查看光源強度'],
     operate:['執行dose校正','清潔dose感測器','清潔光學元件','確認穩定']
-  },
-  '液浸冷卻':{
-    inspect:['確認流量讀值','查看冷卻水溫度','查看冷卻水流量'],
-    operate:['關閉進水閥','目視檢查管路','清潔過濾器','恢復供水','確認流量正常']
   },
   '照明系統':{
     inspect:['確認漂移量','查看焦距偏移','查看照明均勻性','查看光源強度'],
@@ -2184,7 +2175,6 @@ var _LABEL_DEFS={
   'Label_POB':         { text:'Projection Optics',   dir:'tl'    },
   'Label_Illum':       { text:'Illumination System', dir:'right' },
   'Label_Laser':       { text:'193nm ArF Laser',     dir:'right' },
-  'Label_Immersion':   { text:'Immersion Hood',      dir:'left'  },
   'Label_FOUP':        { text:'FOUP Port',           dir:'top'   },
   'Reticle_Stage_Mesh':{ text:'Reticle Stage',       dir:'tr'    },
   'Cabinet_Main':      { text:'Control System',      dir:'top'   },
@@ -2204,7 +2194,6 @@ var _LABEL_OFFSET={
   'Label_POB':         [ 0,    0.25,  0   ],  // Projection Optics → 錨點在鏡組上段，泡泡朝左上
   'Label_Illum':       [ 0,    0.05,  0   ],  // Illumination System → 錨點在桶側，泡泡朝右
   'Label_Laser':       [ 0,    0.05,  0   ],  // 193nm ArF Laser → 錨點在雷射箱側，泡泡朝右
-  'Label_Immersion':   [ 0,    0.05,  0   ],  // Immersion Hood → 錨點在罩側，泡泡朝左
   'Label_FOUP':        [ 0,    0.10,  0   ],  // FOUP Port → 錨點在埠上方，泡泡朝上
   'Reticle_Stage_Mesh':[ 0,    0.05,  0   ],  // Reticle Stage → 錨點在台面，泡泡朝右上
   'Cabinet_Main':      [ 0,    0.15,  0   ],  // Control System → 錨點在機櫃上，泡泡朝上
@@ -2259,7 +2248,6 @@ var _INTERACT_GROUPS=[
   ['POB_Barrel','POB_Top_Cap','POB_Bottom'],
   ['Illum_Barrel'],
   ['Laser_Box','Laser_Vent','Laser_Out'],
-  ['Immersion_Hood','Immersion_Supply','Immersion_Return'],
   ['Cabinet_Main','Cabinet_Panel','Screen','Keyboard'],
   ['FOUP_Port','FOUP_Door'],
 ];
