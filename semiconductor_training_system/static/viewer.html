@@ -2223,11 +2223,11 @@ function _refreshLabels(meshMap){
 
 // 每幀把 3D 座標投影成螢幕座標
 var _proj=new THREE.Vector3();
+var _labelDebugDone=false;
 function _updateLabelPositions(){
   var show=insideMode&&gameStarted;
   _labelSprites.forEach(function(item){
     if(!show){item.div.style.display='none';return;}
-    // 標題固定在畫面頂部，不跟隨 3D 座標
     if(item.title){item.div.style.display='block';return;}
     _proj.copy(item.pos).project(camera);
     if(_proj.z>1){item.div.style.display='none';return;}
@@ -2237,6 +2237,18 @@ function _updateLabelPositions(){
     item.div.style.left=sx+'px';
     item.div.style.top=sy+'px';
   });
+  // 進入內部後輸出一次座標 debug（方便校正位置）
+  if(show&&!_labelDebugDone){
+    _labelDebugDone=true;
+    console.log('[LABEL POS] viewport='+CW+'x'+CH);
+    _labelSprites.forEach(function(item){
+      if(item.title) return;
+      _proj.copy(item.pos).project(camera);
+      var sx=Math.round((_proj.x*0.5+0.5)*CW);
+      var sy=Math.round((-_proj.y*0.5+0.5)*CH);
+      console.log('  "'+item.div.textContent+'" → screen('+sx+','+sy+') world('+item.pos.x.toFixed(2)+','+item.pos.y.toFixed(2)+','+item.pos.z.toFixed(2)+')');
+    });
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
