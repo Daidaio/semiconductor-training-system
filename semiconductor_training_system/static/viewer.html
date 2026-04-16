@@ -46,6 +46,10 @@ canvas{position:fixed;top:0;left:0;display:block;}
 .eq-label.dir-left{transform:translate(calc(-100% - 13px), -50%);}
 .eq-label.dir-left::after{content:'';position:absolute;top:50%;right:-13px;transform:translateY(-50%);border-left:13px solid rgba(100,180,255,0.85);border-top:9px solid transparent;border-bottom:9px solid transparent;}
 .eq-label.dir-left::before{content:'';position:absolute;top:50%;right:-10px;transform:translateY(-50%);border-left:10px solid rgba(6,14,42,0.93);border-top:7px solid transparent;border-bottom:7px solid transparent;z-index:1;}
+/* 下：箭頭朝上，標示在錨點正下方 */
+.eq-label.dir-bottom{transform:translate(-50%, 13px);}
+.eq-label.dir-bottom::after{content:'';position:absolute;top:-13px;left:50%;transform:translateX(-50%);border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:13px solid rgba(100,180,255,0.85);}
+.eq-label.dir-bottom::before{content:'';position:absolute;top:-10px;left:50%;transform:translateX(-50%);border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:10px solid rgba(6,14,42,0.93);z-index:1;}
 /* 標題標籤（機型名稱，固定在畫面頂部）*/
 .eq-label-title{
   position:fixed;
@@ -2173,20 +2177,20 @@ var procElapsed=0;
 // 已根據真實世界座標校正：
 //   chuck(0.26,0.76,0)  pobTop(0.66,2.33,-0.1)  illum(1.21,2.43,-0.1)  laser(1.878,1.11,-0.1)
 var _LABEL_DEFS={
-  // Stage 在桌台中央偏左，泡泡朝右不擋正視角
-  'Label_Stage':       { text:'Wafer Stage',         dir:'right' },
-  // POB 高桶在 X=0.66，泡泡朝左上，不遮桶體
-  'Label_POB':         { text:'Projection Optics',   dir:'tl'    },
-  // Illum 在 X=1.21，比 Laser(1.878) 靠內側，泡泡朝上不與 Laser 擠
-  'Label_Illum':       { text:'Illumination System', dir:'top'   },
-  // Laser 在最右側 X=1.878，改成泡泡朝左上，不跑出右側邊界
-  'Label_Laser':       { text:'193nm ArF Laser',     dir:'tl'    },
-  // FOUP 在左側機櫃，改 right 讓泡泡往中央方向，與 Control System 分開
-  'Label_FOUP':        { text:'FOUP Port',           dir:'right' },
-  // Reticle Stage 與 POB 同 X=0.66，改 right 讓泡泡往右，不與 Projection Optics(tl) 重疊
-  'Reticle_Stage_Mesh':{ text:'Reticle Stage',       dir:'right' },
-  // Control System 在左側機櫃，top 往上
-  'Cabinet_Main':      { text:'Control System',      dir:'top'   },
+  // Wafer Stage：泡泡在載台正下方，箭頭朝上指
+  'Label_Stage':       { text:'Wafer Stage',         dir:'bottom' },
+  // Projection Optics：泡泡在鏡組左邊，箭頭朝右指
+  'Label_POB':         { text:'Projection Optics',   dir:'left'   },
+  // Illumination System：泡泡在照明桶右邊，箭頭朝左指
+  'Label_Illum':       { text:'Illumination System', dir:'right'  },
+  // 193nm ArF Laser：泡泡在雷射箱正上方，箭頭朝下指
+  'Label_Laser':       { text:'193nm ArF Laser',     dir:'top'    },
+  // FOUP Port：泡泡往右清開零件，箭頭朝左指回 FOUP
+  'Label_FOUP':        { text:'FOUP Port',           dir:'right'  },
+  // Reticle Stage：泡泡在光罩載台左邊，箭頭朝右指
+  'Reticle_Stage_Mesh':{ text:'Reticle Stage',       dir:'left'   },
+  // Control System：泡泡在機櫃上方（高於螢幕），箭頭朝下指
+  'Cabinet_Main':      { text:'Control System',      dir:'top'    },
 };
 // 向下相容（_LABEL_TEXT 供外部使用）
 var _LABEL_TEXT={};
@@ -2199,13 +2203,13 @@ var _labelSprites=[];  // [{div, worldPos}]
 // 錨點偏移：[dx, dy, dz]（世界座標，單位同模型）
 // 錨點 = 箭頭尖端，對話框出現在 dir 方向
 var _LABEL_OFFSET={
-  'Label_Stage':       [ 0.05, 0.05,  0   ],  // Wafer Stage → 錨點在載台中上，泡泡朝右
-  'Label_POB':         [ 0,    0.25,  0   ],  // Projection Optics → 錨點在鏡組上段，泡泡朝左上
-  'Label_Illum':       [ 0,    0.05,  0   ],  // Illumination System → 錨點在桶側，泡泡朝右
-  'Label_Laser':       [ 0,    0.05,  0   ],  // 193nm ArF Laser → 錨點在雷射箱側，泡泡朝右
-  'Label_FOUP':        [ 0,    0.10,  0   ],  // FOUP Port → 錨點在埠上方，泡泡朝上
-  'Reticle_Stage_Mesh':[ 0,    0.05,  0   ],  // Reticle Stage → 錨點在台面，泡泡朝右上
-  'Cabinet_Main':      [ 0,    0.15,  0   ],  // Control System → 錨點在機櫃上，泡泡朝上
+  'Label_Stage':       [-0.05, 0.10,  0   ],  // Wafer Stage → 錨點稍偏左，泡泡在載台正下方
+  'Label_POB':         [-0.10, 0.30,  0   ],  // Projection Optics → 錨點在鏡組中段左側，泡泡朝左
+  'Label_Illum':       [ 0.15, 0.10,  0   ],  // Illumination System → 錨點偏右，泡泡在右側
+  'Label_Laser':       [ 0,    0.30,  0   ],  // 193nm ArF Laser → 錨點在雷射箱上方，泡泡在上
+  'Label_FOUP':        [ 0.30, 0.10,  0   ],  // FOUP Port → 錨點向右移出 FOUP，泡泡更往右
+  'Reticle_Stage_Mesh':[ 0,    0.05,  0   ],  // Reticle Stage → 錨點在台面，泡泡朝左
+  'Cabinet_Main':      [ 0,    0.60,  0   ],  // Control System → 錨點拉高到機櫃頂上，泡泡遠離螢幕
 };
 
 function _refreshLabels(meshMap){
@@ -2232,7 +2236,7 @@ function _refreshLabels(meshMap){
 
 // 每幀把 3D 座標投影成螢幕座標
 var _proj=new THREE.Vector3();
-var _labelDebugDone=false;
+var _labelDebugDone=false; // reset each session to re-log after position changes
 function _updateLabelPositions(){
   var show=insideMode&&gameStarted;
   _labelSprites.forEach(function(item){
