@@ -2170,13 +2170,22 @@ var procElapsed=0;
 // text: 顯示文字, dir: 箭頭方向 top/tr/tl/right/left
 // 錨點 = Label_* 節點世界座標 + _LABEL_OFFSET（箭頭尖端所在位置）
 // 對話框泡泡出現在錨點的 dir 方向
+// 已根據真實世界座標校正：
+//   chuck(0.26,0.76,0)  pobTop(0.66,2.33,-0.1)  illum(1.21,2.43,-0.1)  laser(1.878,1.11,-0.1)
 var _LABEL_DEFS={
+  // Stage 在桌台中央偏左，泡泡朝右不擋正視角
   'Label_Stage':       { text:'Wafer Stage',         dir:'right' },
+  // POB 高桶在 X=0.66，泡泡朝左上，不遮桶體
   'Label_POB':         { text:'Projection Optics',   dir:'tl'    },
-  'Label_Illum':       { text:'Illumination System', dir:'right' },
-  'Label_Laser':       { text:'193nm ArF Laser',     dir:'right' },
-  'Label_FOUP':        { text:'FOUP Port',           dir:'top'   },
-  'Reticle_Stage_Mesh':{ text:'Reticle Stage',       dir:'tr'    },
+  // Illum 在 X=1.21，比 Laser(1.878) 靠內側，泡泡朝上不與 Laser 擠
+  'Label_Illum':       { text:'Illumination System', dir:'top'   },
+  // Laser 在最右側 X=1.878，改成泡泡朝左上，不跑出右側邊界
+  'Label_Laser':       { text:'193nm ArF Laser',     dir:'tl'    },
+  // FOUP 在左側機櫃，改 right 讓泡泡往中央方向，與 Control System 分開
+  'Label_FOUP':        { text:'FOUP Port',           dir:'right' },
+  // Reticle Stage 與 POB 同 X=0.66，改 right 讓泡泡往右，不與 Projection Optics(tl) 重疊
+  'Reticle_Stage_Mesh':{ text:'Reticle Stage',       dir:'right' },
+  // Control System 在左側機櫃，top 往上
   'Cabinet_Main':      { text:'Control System',      dir:'top'   },
 };
 // 向下相容（_LABEL_TEXT 供外部使用）
