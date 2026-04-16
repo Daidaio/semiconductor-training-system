@@ -2205,12 +2205,12 @@ var _labelSprites=[];  // [{div, worldPos}]
 var _LABEL_OFFSET={
   // Wafer Stage: Label_Stage 節點 → screen(678,698) world(0.61,0.64,0.90) 後稍往左
   'Label_Stage':       [-0.05, 0.10,  0   ],
-  // Projection Optics: anchor world(0.56,1.76)→screen(657,470)，再往左移 0.10
-  'POB_Barrel':        [-0.20, 0.20,  0   ],
-  // Illumination System: anchor world(1.36,2.53)→screen(782,349)，dir:right 泡泡往右
-  'Illum_Barrel':      [-0.05, 0.10,  0   ],
-  // 193nm ArF Laser: anchor world(1.63,1.51)→screen(829,510)，往左上移讓泡泡在箱左上方
-  'Laser_Box':         [-0.40, 0.55,  0   ],
+  // Projection Optics: anchor world(0.46,1.76)→screen(612,420)，再左 0.10 清開 barrel(screen~643)
+  'POB_Barrel':        [-0.30, 0.20,  0   ],
+  // Illumination System: anchor world(1.36,2.53)→screen(753,299)，往右讓 bubble 左緣清開 barrel
+  'Illum_Barrel':      [ 0.15, 0.10,  0   ],
+  // 193nm ArF Laser: anchor world(1.48,1.66)→screen(770,435)，往右移避開 Illum cylinder
+  'Laser_Box':         [ 0.05, 0.55,  0   ],
   // FOUP Port: 錨點向右移出 FOUP，泡泡更往右
   'Label_FOUP':        [ 0.30, 0.10,  0   ],
   // Reticle Stage: 錨點往左移讓泡泡離開零件
