@@ -2179,12 +2179,12 @@ var procElapsed=0;
 var _LABEL_DEFS={
   // Wafer Stage：泡泡在載台正下方，箭頭朝上指
   'Label_Stage':       { text:'Wafer Stage',         dir:'bottom' },
-  // Projection Optics：泡泡在鏡組左邊，箭頭朝右指
-  'Label_POB':         { text:'Projection Optics',   dir:'left'   },
-  // Illumination System：泡泡在照明桶右邊，箭頭朝左指
-  'Label_Illum':       { text:'Illumination System', dir:'right'  },
-  // 193nm ArF Laser：泡泡在雷射箱正上方，箭頭朝下指
-  'Label_Laser':       { text:'193nm ArF Laser',     dir:'top'    },
+  // Projection Optics：直接綁 POB_Barrel（Label_POB 節點偏移太遠），泡泡在鏡組左邊，箭頭朝右指
+  'POB_Barrel':        { text:'Projection Optics',   dir:'left'   },
+  // Illumination System：直接綁 Illum_Barrel（Label_Illum Z 偏移太遠），泡泡在桶左邊，箭頭朝右指
+  'Illum_Barrel':      { text:'Illumination System', dir:'left'   },
+  // 193nm ArF Laser：直接綁 Laser_Box（Label_Laser Z 偏移 1.4m），泡泡在箱正上方，箭頭朝下指
+  'Laser_Box':         { text:'193nm ArF Laser',     dir:'top'    },
   // FOUP Port：泡泡往右清開零件，箭頭朝左指回 FOUP
   'Label_FOUP':        { text:'FOUP Port',           dir:'right'  },
   // Reticle Stage：泡泡在光罩載台左邊，箭頭朝右指
@@ -2203,13 +2203,20 @@ var _labelSprites=[];  // [{div, worldPos}]
 // 錨點偏移：[dx, dy, dz]（世界座標，單位同模型）
 // 錨點 = 箭頭尖端，對話框出現在 dir 方向
 var _LABEL_OFFSET={
-  'Label_Stage':       [-0.05, 0.10,  0   ],  // Wafer Stage → 錨點稍偏左，泡泡在載台正下方
-  'Label_POB':         [-0.10, 0.30,  0   ],  // Projection Optics → 錨點在鏡組中段左側，泡泡朝左
-  'Label_Illum':       [ 0.15, 0.10,  0   ],  // Illumination System → 錨點偏右，泡泡在右側
-  'Label_Laser':       [ 0,    0.30,  0   ],  // 193nm ArF Laser → 錨點在雷射箱上方，泡泡在上
-  'Label_FOUP':        [ 0.30, 0.10,  0   ],  // FOUP Port → 錨點向右移出 FOUP，泡泡更往右
-  'Reticle_Stage_Mesh':[ 0,    0.05,  0   ],  // Reticle Stage → 錨點在台面，泡泡朝左
-  'Cabinet_Main':      [ 0,    0.60,  0   ],  // Control System → 錨點拉高到機櫃頂上，泡泡遠離螢幕
+  // Wafer Stage: Label_Stage 節點 → screen(678,698) world(0.61,0.64,0.90) 後稍往左
+  'Label_Stage':       [-0.05, 0.10,  0   ],
+  // Projection Optics: POB_Barrel 實際在 world(0.66,~1.5,-0.10)，往左偏移讓泡泡在桶左側
+  'POB_Barrel':        [-0.10, 0.20,  0   ],
+  // Illumination System: Illum_Barrel 實際在 world(1.21,2.43,-0.10)，小偏移，泡泡朝左
+  'Illum_Barrel':      [-0.05, 0.10,  0   ],
+  // 193nm ArF Laser: Laser_Box 實際在 world(1.878,1.110,-0.100)，往左上移讓泡泡在箱上偏左
+  'Laser_Box':         [-0.25, 0.40,  0   ],
+  // FOUP Port: 錨點向右移出 FOUP，泡泡更往右
+  'Label_FOUP':        [ 0.30, 0.10,  0   ],
+  // Reticle Stage: 錨點往左移讓泡泡離開零件
+  'Reticle_Stage_Mesh':[-0.25, 0.05,  0   ],
+  // Control System: 錨點拉高到機櫃頂上，泡泡遠離螢幕
+  'Cabinet_Main':      [ 0,    0.60,  0   ],
 };
 
 function _refreshLabels(meshMap){
