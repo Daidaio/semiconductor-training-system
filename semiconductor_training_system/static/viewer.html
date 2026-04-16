@@ -2181,8 +2181,8 @@ var _LABEL_DEFS={
   'Label_Stage':       { text:'Wafer Stage',         dir:'bottom' },
   // Projection Optics：直接綁 POB_Barrel（Label_POB 節點偏移太遠），泡泡在鏡組左邊，箭頭朝右指
   'POB_Barrel':        { text:'Projection Optics',   dir:'left'   },
-  // Illumination System：直接綁 Illum_Barrel（Label_Illum Z 偏移太遠），泡泡在桶左邊，箭頭朝右指
-  'Illum_Barrel':      { text:'Illumination System', dir:'left'   },
+  // Illumination System：直接綁 Illum_Barrel（Label_Illum Z 偏移太遠），泡泡在桶右邊，箭頭朝左指
+  'Illum_Barrel':      { text:'Illumination System', dir:'right'  },
   // 193nm ArF Laser：直接綁 Laser_Box（Label_Laser Z 偏移 1.4m），泡泡在箱正上方，箭頭朝下指
   'Laser_Box':         { text:'193nm ArF Laser',     dir:'top'    },
   // FOUP Port：泡泡往右清開零件，箭頭朝左指回 FOUP
@@ -2205,12 +2205,12 @@ var _labelSprites=[];  // [{div, worldPos}]
 var _LABEL_OFFSET={
   // Wafer Stage: Label_Stage 節點 → screen(678,698) world(0.61,0.64,0.90) 後稍往左
   'Label_Stage':       [-0.05, 0.10,  0   ],
-  // Projection Optics: POB_Barrel 實際在 world(0.66,~1.5,-0.10)，往左偏移讓泡泡在桶左側
-  'POB_Barrel':        [-0.10, 0.20,  0   ],
-  // Illumination System: Illum_Barrel 實際在 world(1.21,2.43,-0.10)，小偏移，泡泡朝左
+  // Projection Optics: anchor world(0.56,1.76)→screen(657,470)，再往左移 0.10
+  'POB_Barrel':        [-0.20, 0.20,  0   ],
+  // Illumination System: anchor world(1.36,2.53)→screen(782,349)，dir:right 泡泡往右
   'Illum_Barrel':      [-0.05, 0.10,  0   ],
-  // 193nm ArF Laser: Laser_Box 實際在 world(1.878,1.110,-0.100)，往左上移讓泡泡在箱上偏左
-  'Laser_Box':         [-0.25, 0.40,  0   ],
+  // 193nm ArF Laser: anchor world(1.63,1.51)→screen(829,510)，往左上移讓泡泡在箱左上方
+  'Laser_Box':         [-0.40, 0.55,  0   ],
   // FOUP Port: 錨點向右移出 FOUP，泡泡更往右
   'Label_FOUP':        [ 0.30, 0.10,  0   ],
   // Reticle Stage: 錨點往左移讓泡泡離開零件
