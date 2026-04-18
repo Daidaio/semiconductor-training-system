@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 學長 — Claude 風格範例</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif;
+    background: #F0EDE8;
+    display: flex;
+    height: 100vh;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    padding: 30px;
+  }
+
+  /* ── 左側：原本風格（對照組）── */
+  .panel-original {
+    width: 340px;
+    height: 680px;
+    background: #060e2a;
+    border: 1px solid #1a3a5a;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  .panel-original .hdr {
+    background: #0a1828;
+    border-bottom: 1px solid #1a3a5a;
+    padding: 12px 16px;
+    color: #4af;
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 1.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel-original .hdr .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #4af;
+    box-shadow: 0 0 6px #4af;
+  }
+  .panel-original .msgs {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .panel-original .msg {
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.65;
+  }
+  .panel-original .msg.ai {
+    background: rgba(20,50,90,0.6);
+    border: 1px solid rgba(80,160,255,0.15);
+    color: #c0a8ff;
+  }
+  .panel-original .msg.sys {
+    background: rgba(10,30,60,0.5);
+    border: 1px solid rgba(255,165,0,0.2);
+    color: #ffa500;
+    font-size: 10px;
+    text-align: center;
+  }
+  .panel-original .msg.user {
+    background: rgba(20,80,50,0.4);
+    border: 1px solid rgba(80,200,100,0.2);
+    color: #7df;
+    align-self: flex-end;
+    max-width: 85%;
+  }
+  .panel-original .input-row {
+    border-top: 1px solid #1a3a5a;
+    padding: 8px;
+    display: flex;
+    gap: 6px;
+  }
+  .panel-original .input-row input {
+    flex: 1;
+    background: #0a1828;
+    border: 1px solid #1a3a5a;
+    border-radius: 6px;
+    color: #cde;
+    padding: 6px 10px;
+    font-size: 11px;
+    outline: none;
+  }
+  .panel-original .input-row button {
+    background: #1a4a7a;
+    border: none;
+    border-radius: 6px;
+    color: #4af;
+    padding: 6px 14px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .panel-original .label { text-align:center; color:#888; font-size:12px; margin-bottom:6px; }
+
+  /* ── 右側：Claude 風格 ── */
+  .panel-claude {
+    width: 340px;
+    height: 680px;
+    background: #FDFCFA;
+    border: 1px solid #E8E3DC;
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+  }
+  .panel-claude .hdr {
+    background: #FDFCFA;
+    border-bottom: 1px solid #EDE8E0;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .panel-claude .hdr .avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #D4A96A 0%, #C17D3C 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; color: white; font-weight: bold; flex-shrink: 0;
+  }
+  .panel-claude .hdr .info { flex: 1; }
+  .panel-claude .hdr .name {
+    font-size: 14px; font-weight: 600; color: #1A1A1A; letter-spacing: 0;
+  }
+  .panel-claude .hdr .status {
+    font-size: 11px; color: #8A8A8A; display: flex; align-items: center; gap: 4px;
+  }
+  .panel-claude .hdr .status::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: #22C55E; display: inline-block;
+  }
+  .panel-claude .hdr .score-badge {
+    background: #FEF3C7;
+    border: 1px solid #FCD34D;
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #92400E;
+  }
+
+  .panel-claude .msgs {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background: #FDFCFA;
+  }
+  .panel-claude .msg-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .panel-claude .msg-row.user { flex-direction: row-reverse; }
+
+  .panel-claude .bubble-avatar {
+    width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: bold;
+  }
+  .panel-claude .bubble-avatar.ai {
+    background: linear-gradient(135deg, #D4A96A, #C17D3C);
+    color: white;
+  }
+  .panel-claude .bubble-avatar.user {
+    background: #E8E3DC;
+    color: #5A5A5A;
+  }
+
+  .panel-claude .bubble {
+    max-width: 82%;
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .panel-claude .bubble.ai {
+    background: #F0ECE6;
+    color: #1A1A1A;
+    border-bottom-left-radius: 4px;
+  }
+  .panel-claude .bubble.user {
+    background: #D97706;
+    color: white;
+    border-bottom-right-radius: 4px;
+  }
+  .panel-claude .bubble.sys {
+    background: #F0FDF4;
+    border: 1px solid #BBF7D0;
+    color: #166534;
+    font-size: 12px;
+    border-radius: 10px;
+    width: 100%;
+    text-align: center;
+    padding: 7px 12px;
+  }
+  .panel-claude .bubble .label-tag {
+    font-size: 10px;
+    font-weight: 600;
+    color: #C17D3C;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+    display: block;
+  }
+
+  .panel-claude .fault-banner {
+    margin: 0 14px;
+    background: #FEF2F2;
+    border: 1px solid #FECACA;
+    border-radius: 10px;
+    padding: 8px 12px;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .panel-claude .fault-banner .icon { font-size: 16px; flex-shrink: 0; }
+  .panel-claude .fault-banner .text { font-size: 12px; color: #991B1B; line-height: 1.5; }
+  .panel-claude .fault-banner .text strong { display: block; margin-bottom: 2px; }
+
+  .panel-claude .input-area {
+    border-top: 1px solid #EDE8E0;
+    padding: 12px 14px;
+    background: #FDFCFA;
+  }
+  .panel-claude .input-box {
+    background: #F5F1EB;
+    border: 1.5px solid #E8E3DC;
+    border-radius: 12px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    transition: border-color 0.2s;
+  }
+  .panel-claude .input-box:focus-within {
+    border-color: #D97706;
+  }
+  .panel-claude .input-box textarea {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: 13px;
+    color: #1A1A1A;
+    resize: none;
+    line-height: 1.5;
+    font-family: inherit;
+    max-height: 80px;
+  }
+  .panel-claude .input-box textarea::placeholder { color: #A8A8A8; }
+  .panel-claude .input-box .send-btn {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    background: #D97706;
+    border: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .panel-claude .input-box .send-btn:hover { background: #B45309; }
+  .panel-claude .input-box .send-btn svg {
+    width: 14px; height: 14px; fill: white;
+  }
+  .panel-claude .hint-row {
+    display: flex; gap: 6px; margin-top: 8px;
+  }
+  .panel-claude .hint-chip {
+    background: #F5F1EB;
+    border: 1px solid #E8E3DC;
+    border-radius: 20px;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: #6B6B6B;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .panel-claude .hint-chip:hover { background: #EDE8E0; }
+
+  /* ── Label ── */
+  .col { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .col-label { font-size: 12px; color: #666; font-weight: 500; }
+</style>
+</head>
+<body>
+
+<!-- 左：原本風格 -->
+<div class="col">
+  <div class="col-label">目前風格（暗色科技感）</div>
+  <div class="panel-original">
+    <div class="hdr">
+      <div class="dot"></div>
+      AI 學長 — 即時輔導
+    </div>
+    <div class="msgs">
+      <div class="msg sys">已偵測故障：鏡片溫升異常 ▲ 請執行診斷 SOP</div>
+      <div class="msg ai">你好！我偵測到目前曝光機的鏡片溫度出現異常升高。你覺得這種情況最可能是由什麼原因引起的？先從冷卻系統的角度思考看看。</div>
+      <div class="msg user">是冷卻水流量不足嗎？</div>
+      <div class="msg ai">很好的方向！冷卻流量不足確實是主因之一。那你下一步會去檢查哪個部件？請說出具體的操作步驟。</div>
+      <div class="msg user">去看 Projection Optics 的溫度感測器</div>
+      <div class="msg ai">正確！接下來請操作：選擇 Projection Optics → 檢查。你目前得分 85 分，表現不錯，繼續保持！</div>
+    </div>
+    <div class="input-row">
+      <input placeholder="輸入回答..." />
+      <button>送出</button>
+    </div>
+  </div>
+</div>
+
+<!-- 右：Claude 風格 -->
+<div class="col">
+  <div class="col-label">Claude 風格（簡潔暖色系）</div>
+  <div class="panel-claude">
+    <div class="hdr">
+      <div class="avatar">AI</div>
+      <div class="info">
+        <div class="name">AI 學長</div>
+        <div class="status">即時輔導中</div>
+      </div>
+      <div class="score-badge">85 分</div>
+    </div>
+
+    <div class="msgs">
+      <div class="fault-banner">
+        <div class="icon">⚠️</div>
+        <div class="text">
+          <strong>故障警報：鏡片溫升異常</strong>
+          鏡片溫度：28.3°C（正常值 23°C），請執行診斷 SOP。
+        </div>
+      </div>
+
+      <div class="msg-row">
+        <div class="bubble-avatar ai">AI</div>
+        <div class="bubble ai">
+          <span class="label-tag">AI 學長</span>
+          你好！我偵測到曝光機鏡片溫度出現異常升高。你覺得這種情況最可能是由什麼原因引起的？先從冷卻系統的角度思考看看。
+        </div>
+      </div>
+
+      <div class="msg-row user">
+        <div class="bubble-avatar user">我</div>
+        <div class="bubble user">是冷卻水流量不足嗎？</div>
+      </div>
+
+      <div class="msg-row">
+        <div class="bubble-avatar ai">AI</div>
+        <div class="bubble ai">
+          <span class="label-tag">AI 學長</span>
+          很好的方向！冷卻流量不足確實是主因之一。那你下一步會去檢查哪個部件？請說出具體的操作步驟。
+        </div>
+      </div>
+
+      <div class="msg-row user">
+        <div class="bubble-avatar user">我</div>
+        <div class="bubble user">去看 Projection Optics 的溫度感測器</div>
+      </div>
+
+      <div class="msg-row">
+        <div class="bubble-avatar ai">AI</div>
+        <div class="bubble ai">
+          <span class="label-tag">AI 學長</span>
+          正確！接下來請操作：選擇 <strong>Projection Optics → 檢查</strong>。你目前表現不錯，繼續保持！
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-box">
+        <textarea rows="1" placeholder="輸入你的回答..."></textarea>
+        <button class="send-btn">
+          <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+        </button>
+      </div>
+      <div class="hint-row">
+        <div class="hint-chip">詢問學長提示</div>
+        <div class="hint-chip">查看 SOP 步驟</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -507,8 +507,13 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
         })
 
     def _api_start(self):
+        global _action_session, _session_summary
         data = self._read_json()
         difficulty = data.get("difficulty", "medium")
+        # ── 新情境開始，清除上一局殘留的 ActionSession 與統計 ──
+        with _action_session_lock:
+            _action_session = None
+            _session_summary = {}
         eq, dash, eq_st, msgs, log = _system_instance.start_new_scenario(difficulty)
         with _session_lock:
             _session.update(started=True, eq=eq, dash=dash,
@@ -536,7 +541,10 @@ class _GameHandler(http.server.SimpleHTTPRequestHandler):
                     "ai_msg": self._latest_ai(msgs) or "情境已開始，請開始檢查設備。",
                     "sop_fault_type": sop_fault_type,
                     "qa_pending": qa_pending,
-                    "msgs": self._msgs_to_list(msgs)})
+                    "msgs": self._msgs_to_list(msgs),
+                    "score": 100,
+                    "current_step": 0,
+                    "total_steps": 0})
 
     def _api_chat(self):
         data = self._read_json()

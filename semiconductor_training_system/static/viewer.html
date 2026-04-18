@@ -13,11 +13,11 @@ canvas{position:fixed;top:0;left:0;display:block;}
   background:rgba(6,14,42,0.93);
   border:2px solid rgba(100,180,255,0.85);
   border-radius:10px;
-  padding:6px 14px;
+  padding:7px 16px;
   color:#e8f4ff;
   font-family:"Arial","sans-serif";
   font-weight:700;
-  font-size:13px;
+  font-size:15px;
   letter-spacing:0.5px;
   white-space:nowrap;
   text-shadow:0 0 6px rgba(80,160,255,0.7);
@@ -2018,6 +2018,9 @@ document.getElementById('start-btn').addEventListener('click',function(){
     if(d.sop_fault_type) setActiveFault(d.sop_fault_type);
     // 初始問題需要遮罩（進入內部後才生效）
     _pendingQaOnEnter = d.qa_pending === true;
+    // ── 重置分數與步驟顯示（清除上一局殘留）──
+    updateScore(100);
+    updateFaultProgress(0, 0);
   })
   .catch(function(e){
     addMsg('sys','⚠ 連線提示: '+e);
@@ -2045,18 +2048,23 @@ document.addEventListener('keydown',function(e){
       if(hmiOpen){closeHMI();break;}
       if(maintOpen){closeMaintenance();break;}
       if(inspecting){closeInspect();break;}
-      // 外殼模式：按 E（hover 到外殼 mesh，或靠近機台 2.5m 內）
+      // 外殼模式：按 E（必須先走近機台 3.0m 內才能進入）
       if(!insideMode){
         var _camPos=controls.getObject().position;
         var _distToMachine=Math.sqrt(
           Math.pow(_camPos.x-_sCX,2)+Math.pow(_camPos.z-(_sCZ+_sD/2),2));
-        if(hoveredObj&&isShellMesh(hoveredObj)){
-          if(hoveredObj.name==='ShellHMI_Screen'){showHMIOverlay();}
-          else{enterInterior();}
+        if(_distToMachine<3.0){
+          // 在範圍內：hover HMI 外殼開 HMI，其餘進入機台內部
+          if(hoveredObj&&isShellMesh(hoveredObj)&&hoveredObj.name==='ShellHMI_Screen'){
+            showHMIOverlay();
+          } else {
+            enterInterior();
+          }
           break;
-        } else if(_distToMachine<2.5){
-          enterInterior();break;
         }
+        // 距離太遠：顯示提示，不進入
+        addMsg('sys','⚠ 請先走近機台後再按 <b>E</b> 進入。');
+        break;
       }
       if(hoveredObj){
         // 故障維修優先：檢查 hover 的 mesh 是否屬於某個故障的觸發節點
@@ -2210,7 +2218,7 @@ var _LABEL_OFFSET={
   // Illumination System: anchor world(1.36,2.53)→screen(753,299)，往右讓 bubble 左緣清開 barrel
   'Illum_Barrel':      [ 0.15, 0.10,  0   ],
   // 193nm ArF Laser: anchor world(1.48,1.66)→screen(770,435)，往右移避開 Illum cylinder
-  'Laser_Box':         [ 0.05, 0.55,  0   ],
+  'Laser_Box':         [ 0.35, 0.55,  0   ],
   // FOUP Port: 錨點向右移出 FOUP，泡泡更往右
   'Label_FOUP':        [ 0.30, 0.10,  0   ],
   // Reticle Stage: 錨點往左移讓泡泡離開零件
