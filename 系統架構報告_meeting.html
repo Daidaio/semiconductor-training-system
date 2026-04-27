@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>系統架構技術報告 — 週會版</title>
+<script src="deck-stage.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --blue:   #1a5fa8;
+    --blue-l: #4a8fd4;
+    --blue-bg:#e8f1fb;
+    --green:  #4a7c4e;
+    --green-l:#7ab87e;
+    --green-bg:#e6f4e7;
+    --purple: #6a4a9c;
+    --purple-l:#9a7acc;
+    --purple-bg:#f0eaf8;
+    --orange: #c07020;
+    --orange-l:#e09840;
+    --orange-bg:#fdf3e3;
+    --red:    #b03030;
+    --teal:   #2a7a8a;
+    --teal-bg:#e5f4f7;
+    --text:   #1a1a1a;
+    --muted:  #5a6272;
+    --border: #d0d8e8;
+    --bg:     #f4f7fc;
+    --w: 1920px;
+    --h: 1080px;
+  }
+
+  section {
+    font-family: 'Noto Sans TC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    width: var(--w);
+    height: var(--h);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* ── SHARED ── */
+  .top-bar {
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 10px;
+    background: linear-gradient(90deg, var(--blue) 0%, var(--blue-l) 100%);
+  }
+  .bot-bar {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 6px;
+    background: linear-gradient(90deg, var(--blue) 0%, var(--blue-l) 100%);
+  }
+  .slide-num {
+    position: absolute; bottom: 44px; right: 72px;
+    font-size: 22px; color: var(--blue-l); font-weight: 300;
+  }
+  .section-tag {
+    display: inline-flex; align-items: center;
+    padding: 6px 22px;
+    background: var(--blue-bg);
+    color: var(--blue);
+    border-radius: 999px;
+    font-size: 22px; font-weight: 600;
+    border: 1.5px solid var(--blue-l);
+    letter-spacing: 0.04em;
+  }
+  .slide-title {
+    font-size: 50px; font-weight: 900;
+    color: var(--text); line-height: 1.15;
+    letter-spacing: -0.01em;
+  }
+  .slide-title em { color: var(--blue); font-style: normal; }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    border: 1.5px solid var(--border);
+    padding: 28px 32px;
+  }
+  .card-title {
+    font-size: 26px; font-weight: 700; margin-bottom: 14px;
+  }
+  ul.dot { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  ul.dot li { font-size: 24px; color: var(--muted); display: flex; align-items: flex-start; gap: 10px; line-height: 1.4; }
+  ul.dot li::before { content: '•'; color: var(--blue); font-weight: 900; flex-shrink: 0; }
+  .badge {
+    display: inline-block;
+    padding: 6px 18px;
+    border-radius: 8px;
+    font-size: 22px; font-weight: 600;
+  }
+  .chip {
+    display: inline-flex; align-items: center;
+    background: var(--blue-bg); color: var(--blue);
+    border: 1px solid var(--blue-l);
+    border-radius: 6px; padding: 5px 16px;
+    font-size: 22px; font-weight: 500;
+  }
+
+  /* ── SLIDE 1: OVERVIEW ── */
+  #s1 { background: #fff; }
+  #s1 .inner { padding: 70px 100px; display: flex; flex-direction: column; gap: 40px; }
+  #s1 .header { display: flex; align-items: center; gap: 24px; }
+  #s1 .layers { display: flex; flex-direction: column; gap: 16px; }
+  #s1 .layer {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 20px;
+    align-items: center;
+    padding: 22px 32px;
+    border-radius: 14px;
+    border: 1.5px solid var(--border);
+  }
+  #s1 .layer-n {
+    font-size: 32px; font-weight: 900; text-align: center; line-height: 1;
+  }
+  #s1 .layer-body { display: flex; align-items: center; justify-content: space-between; }
+  #s1 .layer-name { font-size: 28px; font-weight: 700; }
+  #s1 .layer-chips { display: flex; gap: 10px; flex-wrap: wrap; }
+  #s1 .layer-chip {
+    background: rgba(255,255,255,0.6);
+    border: 1px solid rgba(255,255,255,0.5);
+    border-radius: 6px; padding: 4px 14px;
+    font-size: 21px; font-weight: 500;
+  }
+  #s1 .l-data   { background: var(--blue-bg);   border-color: var(--blue-l); }
+  #s1 .l-ui     { background: var(--green-bg);  border-color: var(--green-l); }
+  #s1 .l-ai     { background: var(--purple-bg); border-color: var(--purple-l); }
+  #s1 .l-train  { background: var(--orange-bg); border-color: var(--orange-l); }
+  #s1 .l-eval   { background: var(--teal-bg);   border-color: var(--teal); }
+  #s1 .l-data .layer-n   { color: var(--blue); }
+  #s1 .l-ui .layer-n     { color: var(--green); }
+  #s1 .l-ai .layer-n     { color: var(--purple); }
+  #s1 .l-train .layer-n  { color: var(--orange); }
+  #s1 .l-eval .layer-n   { color: var(--teal); }
+
+  /* ── SLIDE 2: DATASET ── */
+  #s2 { }
+  #s2 .inner { padding: 80px 100px; }
+  #s2 .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+    margin-top: 50px;
+    height: 810px;
+    align-items: start;
+  }
+  #s2 .stat-trio { display: flex; gap: 28px; }
+  #s2 .stat-box {
+    flex: 1; background: var(--blue);
+    border-radius: 16px; padding: 28px 20px; text-align: center;
+  }
+  #s2 .stat-num { font-size: 52px; font-weight: 900; color: #fff; line-height: 1; }
+  #s2 .stat-lbl { font-size: 20px; color: rgba(255,255,255,0.85); margin-top: 8px; }
+  #s2 .flow-box { margin-top: 28px; }
+  #s2 .flow-row {
+    display: flex; align-items: flex-start; gap: 18px;
+    padding: 16px 0; border-bottom: 1px solid var(--border);
+  }
+  #s2 .flow-row:last-child { border-bottom: none; }
+  #s2 .flow-dot {
+    width: 38px; height: 38px; background: var(--blue);
+    border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 20px; font-weight: 700; margin-top: 2px;
+  }
+  #s2 .flow-text { font-size: 24px; color: var(--text); line-height: 1.5; }
+  #s2 .flow-sub  { font-size: 22px; color: var(--muted); margin-top: 4px; }
+  #s2 .right { display: flex; flex-direction: column; gap: 24px; }
+  #s2 .usage-card {
+    background: #fff; border-radius: 14px;
+    border: 1.5px solid var(--border); padding: 24px 28px;
+  }
+  #s2 .usage-title { font-size: 24px; font-weight: 700; color: var(--blue); margin-bottom: 10px; }
+  #s2 .usage-body  { font-size: 23px; color: var(--text); line-height: 1.55; }
+  #s2 .sigma-row { display: flex; gap: 14px; margin-top: 12px; flex-wrap: wrap; }
+  #s2 .sigma-n { background: #e6f7ee; color: #2a7a4e; border-radius: 8px; padding: 7px 18px; font-size: 22px; font-weight: 600; }
+  #s2 .sigma-f { background: #fde8e8; color: #9a2020; border-radius: 8px; padding: 7px 18px; font-size: 22px; font-weight: 600; }
+
+  /* ── SLIDE 3: UI ── */
+  #s3 .inner { padding: 70px 100px; }
+  #s3 .grid-3 {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 32px; margin-top: 44px; height: 820px;
+  }
+  #s3 .ui-card {
+    border-radius: 20px; border: 2px solid var(--green-l);
+    background: var(--green-bg); padding: 36px 28px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  #s3 .ui-icon {
+    width: 72px; height: 72px; background: var(--green);
+    border-radius: 16px; display: flex; align-items: center;
+    justify-content: center;
+  }
+  #s3 .ui-icon svg { width: 38px; height: 38px; color: #fff; }
+  #s3 .ui-title { font-size: 30px; font-weight: 700; color: var(--text); }
+  #s3 .ui-sub   { font-size: 22px; color: var(--green); font-weight: 500; margin-top: -8px; }
+  #s3 .ui-list  { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  #s3 .ui-list li { display: flex; align-items: flex-start; gap: 10px; font-size: 23px; color: var(--muted); line-height: 1.4; }
+  #s3 .ui-list li::before { content: '▶'; color: var(--green); font-size: 16px; flex-shrink: 0; margin-top: 3px; }
+  #s3 .api-pill {
+    margin-top: auto;
+    background: var(--green); color: #fff;
+    border-radius: 8px; padding: 10px 18px;
+    font-size: 22px; font-family: 'Courier New', monospace; font-weight: 600;
+  }
+
+  /* ── SLIDE 4: AI SYSTEM ── */
+  #s4 .inner { padding: 70px 100px; }
+  #s4 .ai-grid {
+    display: grid; grid-template-columns: 1.1fr 0.95fr 0.95fr;
+    gap: 28px; margin-top: 44px; height: 820px;
+    align-items: start;
+  }
+  #s4 .ai-card {
+    border-radius: 20px; padding: 32px 28px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  #s4 .ai-card.mentor  { background: var(--purple-bg); border: 2px solid var(--purple-l); }
+  #s4 .ai-card.agent   { background: #f0f4ff; border: 2px solid #8888dd; }
+  #s4 .ai-card.adapt   { background: var(--blue-bg); border: 2px solid var(--blue-l); }
+  #s4 .ai-head {
+    display: flex; align-items: center; gap: 16px;
+    padding-bottom: 14px; border-bottom: 2px solid rgba(0,0,0,0.07);
+  }
+  #s4 .ai-icon {
+    width: 64px; height: 64px; border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  #s4 .ai-card.mentor .ai-icon { background: var(--purple); }
+  #s4 .ai-card.agent  .ai-icon { background: #5050cc; }
+  #s4 .ai-card.adapt  .ai-icon { background: var(--blue); }
+  #s4 .ai-icon svg { width: 34px; height: 34px; color: #fff; }
+  #s4 .ai-name { font-size: 28px; font-weight: 700; }
+  #s4 .ai-card.mentor .ai-name { color: var(--purple); }
+  #s4 .ai-card.agent  .ai-name { color: #4040bb; }
+  #s4 .ai-card.adapt  .ai-name { color: var(--blue); }
+  #s4 .ai-tech { font-size: 21px; color: var(--muted); margin-top: 2px; }
+  #s4 .ai-items { display: flex; flex-direction: column; gap: 12px; }
+  #s4 .ai-item {
+    background: #fff; border-radius: 10px; padding: 14px 18px;
+    border: 1px solid rgba(0,0,0,0.07);
+  }
+  #s4 .ai-item-title { font-size: 23px; font-weight: 600; color: var(--text); }
+  #s4 .ai-item-desc  { font-size: 21px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+  #s4 .mode-row { display: flex; flex-direction: column; gap: 10px; }
+  #s4 .mode-item {
+    display: flex; align-items: center; gap: 14px;
+    background: #fff; border-radius: 10px; padding: 12px 16px;
+  }
+  #s4 .mode-badge {
+    font-size: 20px; font-weight: 700; border-radius: 6px;
+    padding: 5px 14px; min-width: 80px; text-align: center; flex-shrink: 0;
+  }
+  #s4 .m-c { background: #1a2a3e; color: #fff; }
+  #s4 .m-s { background: var(--blue-bg); color: var(--blue); border: 1px solid var(--blue-l); }
+  #s4 .m-sc{ background: #fef8ee; color: var(--orange); border: 1px solid var(--orange-l); }
+  #s4 .m-r { background: #fde8e8; color: var(--red); border: 1px solid #e08888; }
+  #s4 .mode-range { font-size: 23px; font-weight: 700; min-width: 80px; }
+  #s4 .mode-desc  { font-size: 21px; color: var(--muted); }
+  #s4 .llm-tag {
+    margin-top: auto; background: var(--purple);
+    color: #fff; border-radius: 10px; padding: 12px 18px;
+    font-size: 22px; font-weight: 500; line-height: 1.4;
+  }
+
+  /* ── SLIDE 5: TRAINING FLOW ── */
+  #s5 .inner { padding: 70px 100px; }
+  #s5 .flow-layout {
+    display: grid; grid-template-columns: 1fr 80px 1fr;
+    gap: 0; margin-top: 44px; height: 820px; align-items: center;
+  }
+  #s5 .flow-col {
+    display: flex; flex-direction: column; gap: 24px; height: 100%; justify-content: center;
+  }
+  #s5 .flow-header {
+    text-align: center; padding: 22px 0;
+    font-size: 32px; font-weight: 900;
+    border-radius: 16px 16px 0 0;
+  }
+  #s5 .h-theory { background: var(--orange); color: #fff; }
+  #s5 .h-prac   { background: var(--blue);   color: #fff; }
+  #s5 .flow-card {
+    border-radius: 16px; padding: 28px 28px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  #s5 .fc-theory { background: var(--orange-bg); border: 2px solid var(--orange-l); }
+  #s5 .fc-prac   { background: var(--blue-bg);   border: 2px solid var(--blue-l); }
+  #s5 .fc-title  { font-size: 26px; font-weight: 700; }
+  #s5 .fc-theory .fc-title { color: var(--orange); }
+  #s5 .fc-prac   .fc-title { color: var(--blue); }
+  #s5 .fc-items { display: flex; flex-direction: column; gap: 10px; }
+  #s5 .fc-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    font-size: 23px; color: var(--muted); line-height: 1.45;
+  }
+  #s5 .fc-item::before { content: '▶'; font-size: 14px; flex-shrink: 0; margin-top: 4px; }
+  #s5 .fc-theory .fc-item::before { color: var(--orange); }
+  #s5 .fc-prac   .fc-item::before { color: var(--blue); }
+  #s5 .arrow-col {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 56px; color: var(--muted);
+  }
+  #s5 .bridge {
+    margin-top: 28px;
+    background: #fff; border: 2px solid var(--border);
+    border-radius: 14px; padding: 22px 28px;
+    text-align: center;
+  }
+  #s5 .bridge-title { font-size: 24px; font-weight: 700; color: var(--text); }
+  #s5 .bridge-body  { font-size: 22px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+
+  /* ── SLIDE 6: EVALUATION ── */
+  #s6 .inner { padding: 70px 100px; }
+  #s6 .eval-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 48px; margin-top: 44px; height: 820px; align-items: start;
+  }
+  #s6 .eval-card {
+    border-radius: 20px; padding: 36px 32px;
+    display: flex; flex-direction: column; gap: 22px;
+  }
+  #s6 .eval-card.ops  { background: var(--teal-bg); border: 2px solid var(--teal); }
+  #s6 .eval-card.quiz { background: var(--blue-bg); border: 2px solid var(--blue-l); }
+  #s6 .eval-head {
+    display: flex; align-items: center; gap: 20px;
+    padding-bottom: 18px; border-bottom: 2px solid rgba(0,0,0,0.07);
+  }
+  #s6 .eval-icon {
+    width: 68px; height: 68px; border-radius: 16px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #s6 .eval-card.ops  .eval-icon { background: var(--teal); }
+  #s6 .eval-card.quiz .eval-icon { background: var(--blue); }
+  #s6 .eval-icon svg { width: 36px; height: 36px; color: #fff; }
+  #s6 .eval-name { font-size: 32px; font-weight: 700; }
+  #s6 .eval-card.ops  .eval-name { color: var(--teal); }
+  #s6 .eval-card.quiz .eval-name { color: var(--blue); }
+  #s6 .eval-items { display: flex; flex-direction: column; gap: 14px; }
+  #s6 .eval-item {
+    background: #fff; border-radius: 12px; padding: 16px 20px;
+    border: 1px solid rgba(0,0,0,0.07); display: flex; flex-direction: column; gap: 4px;
+  }
+  #s6 .ei-title { font-size: 24px; font-weight: 700; color: var(--text); }
+  #s6 .ei-desc  { font-size: 22px; color: var(--muted); line-height: 1.4; }
+  #s6 .group-pills { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+  #s6 .gp {
+    padding: 6px 16px; border-radius: 6px; font-size: 21px; font-weight: 600;
+  }
+  #s6 .gp-a { background: #e8f4ff; color: var(--blue); }
+  #s6 .gp-b { background: #f0e8ff; color: var(--purple); }
+  #s6 .gp-c { background: #fff3e8; color: var(--orange); }
+  #s6 .result-box {
+    background: var(--blue); border-radius: 14px; padding: 20px 24px;
+    display: flex; align-items: center; gap: 20px;
+  }
+  #s6 .result-num { font-size: 56px; font-weight: 900; color: #fff; line-height: 1; }
+  #s6 .result-detail { color: rgba(255,255,255,0.9); font-size: 22px; line-height: 1.45; }
+</style>
+</head>
+<body>
+
+<deck-stage width="1920" height="1080">
+
+<!-- ════════════════════════════════════════════
+     SLIDE 1: SYSTEM OVERVIEW
+════════════════════════════════════════════ -->
+<section id="s1" data-label="系統架構總覽">
+  <div class="top-bar"></div>
+  <div class="inner">
+    <div class="header">
+      <div class="section-tag">Weekly Meeting · 2026-04</div>
+      <div class="slide-title" style="font-size:46px;">半導體微影設備虛擬訓練系統 —&nbsp;<em>系統架構技術報告</em></div>
+    </div>
+    <div class="layers">
+
+      <div class="layer l-data">
+        <div class="layer-n">1</div>
+        <div class="layer-body">
+          <div class="layer-name">Dataset 資料來源層</div>
+          <div class="layer-chips">
+            <span class="layer-chip" style="color:var(--blue);font-weight:700;">UCI SECOM 製程資料集</span>
+            <span class="layer-chip">1,567 wafer samples</span>
+            <span class="layer-chip">590 sensor features</span>
+            <span class="layer-chip">Pass 1,463 / Fail 104</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layer l-ui">
+        <div class="layer-n">2</div>
+        <div class="layer-body">
+          <div class="layer-name">User Interface 前端展示層</div>
+          <div class="layer-chips">
+            <span class="layer-chip" style="color:var(--green);font-weight:700;">Three.js WebGL · Viewer.html</span>
+            <span class="layer-chip">3D 互動環境</span>
+            <span class="layer-chip">虛擬控制面板 HMI</span>
+            <span class="layer-chip">AI 對話 &amp; 操作評估面板</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layer l-ai">
+        <div class="layer-n">3</div>
+        <div class="layer-body">
+          <div class="layer-name">AI Mentor System AI 導師層</div>
+          <div class="layer-chips">
+            <span class="layer-chip" style="color:var(--purple);font-weight:700;">Qwen LLM 本地端推理</span>
+            <span class="layer-chip">AI Mentor 蘇格拉底引導</span>
+            <span class="layer-chip">Diagnostic / Operation Agent</span>
+            <span class="layer-chip">自適應四模式評分</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layer l-train">
+        <div class="layer-n">4</div>
+        <div class="layer-body">
+          <div class="layer-name">訓練流程層 Training Flow</div>
+          <div class="layer-chips">
+            <span class="layer-chip" style="color:var(--orange);font-weight:700;">理論學習 + 實機操作 整合式</span>
+            <span class="layer-chip">DUV 微影原理問答</span>
+            <span class="layer-chip">SOP 自主操作評估</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layer l-eval">
+        <div class="layer-n">5</div>
+        <div class="layer-body">
+          <div class="layer-name">評分與問卷系統 Evaluation</div>
+          <div class="layer-chips">
+            <span class="layer-chip" style="color:var(--teal);font-weight:700;">操作正確性 + 問卷前後測</span>
+            <span class="layer-chip">三類受試者</span>
+            <span class="layer-chip">量化進步幅度統計</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <div class="slide-num">01</div>
+  <div class="bot-bar"></div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     SLIDE 2: DATASET
+════════════════════════════════════════════ -->
+<section id="s2" data-label="Dataset 資料層">
+  <div class="top-bar"></div>
+  <div class="inner">
+    <div style="display:flex;align-items:center;gap:20px;">
+      <div class="section-tag" style="background:var(--blue-bg);color:var(--blue);border-color:var(--blue-l);">Layer 1 · Dataset</div>
+      <div class="slide-title">UCI SECOM 製程資料集 —&nbsp;<em>真實感測器統計基礎</em></div>
+    </div>
+    <div class="layout">
+      <div>
+        <!-- Stat boxes -->
+        <div class="stat-trio" style="margin-bottom:32px;">
+          <div class="stat-box">
+            <div class="stat-num">1,567</div>
+            <div class="stat-lbl">Wafer Samples</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num">590</div>
+            <div class="stat-lbl">Sensor Features</div>
+          </div>
+          <div class="stat-box" style="background:#e55050;">
+            <div class="stat-num" style="font-size:40px;">1,463 / 104</div>
+            <div class="stat-lbl">Pass / Fail</div>
+          </div>
+        </div>
+
+        <!-- Processing flow -->
+        <div class="flow-box card">
+          <div class="card-title" style="color:var(--blue);">前處理流程（SecomNoiseModel）</div>
+          <div class="flow-row">
+            <div class="flow-dot">1</div>
+            <div><div class="flow-text">填補 NaN（各欄中位數）</div></div>
+          </div>
+          <div class="flow-row">
+            <div class="flow-dot">2</div>
+            <div>
+              <div class="flow-text">PCA 降維：590 特徵 → 前 20 主成分</div>
+              <div class="flow-sub">萃取與製程結果相關性最高的主成分軸</div>
+            </div>
+          </div>
+          <div class="flow-row">
+            <div class="flow-dot">3</div>
+            <div>
+              <div class="flow-text">分離 Pass / Fail 樣本，建立雜訊統計分布</div>
+              <div class="flow-sub">正偏態雜訊模型（skewness ≈ 0.12）</div>
+            </div>
+          </div>
+          <div class="flow-row">
+            <div class="flow-dot">4</div>
+            <div>
+              <div class="flow-text">計算 health_score（0 ~ 1）</div>
+              <div class="flow-sub">依 PCA 投影座標計算；分數越低代表設備狀態越差</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right">
+        <div class="usage-card">
+          <div class="usage-title">SECOM 在本系統中的角色</div>
+          <div class="usage-body">
+            <strong>不預測良率</strong>，而是建立<strong>製程雜訊統計模型</strong>，驅動虛擬 HMI 的 590 個感測器即時讀值，使讀值符合真實統計分布而非亂數
+          </div>
+        </div>
+
+        <div class="usage-card">
+          <div class="usage-title">CD 預測雜訊調變（health_score 驅動）</div>
+          <div class="usage-body">health_score 直接影響 CD 預測的雜訊標準差：</div>
+          <div class="sigma-row">
+            <div class="sigma-n">正常狀態  σ = 1.5 nm</div>
+            <div class="sigma-f">故障狀態  σ = 3.0 – 4.8 nm</div>
+          </div>
+        </div>
+
+        <div class="usage-card">
+          <div class="usage-title">虛擬 HMI 面板呈現</div>
+          <div class="usage-body">
+            590 個感測器即時讀值 ／ CDU Map 空間分布圖 ／ CD 趨勢圖（含 3σ 控制線）／ Overlay 向量場可視化
+          </div>
+        </div>
+
+        <div class="usage-card">
+          <div class="usage-title">故障注入時的效果</div>
+          <div class="usage-body">
+            注入 lens_hotspot、contamination 等 5 種故障後，noise σ 即時升高並反映至 CDU Map 及警報狀態
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-num">02</div>
+  <div class="bot-bar"></div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     SLIDE 3: USER INTERFACE
+════════════════════════════════════════════ -->
+<section id="s3" data-label="User Interface 前端層">
+  <div class="top-bar"></div>
+  <div class="inner">
+    <div style="display:flex;align-items:center;gap:20px;">
+      <div class="section-tag" style="background:var(--green-bg);color:var(--green);border-color:var(--green-l);">Layer 2 · User Interface</div>
+      <div class="slide-title">Three.js WebGL ·&nbsp;<em>三大介面模組</em></div>
+    </div>
+    <div class="grid-3">
+
+      <div class="ui-card">
+        <div class="ui-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
+        </div>
+        <div class="ui-title">3D 互動環境</div>
+        <div class="ui-sub">ASML DUV 虛擬機台</div>
+        <ul class="ui-list">
+          <li>ASML DUV 高擬真 3D 模型（asml_duv.glb）</li>
+          <li>PointerLock 第一人稱視角控制</li>
+          <li>WASD 移動 / 滑鼠視角旋轉</li>
+          <li>Raycaster 偵測鄰近零件，按 [E] 觸發互動</li>
+          <li>故障發生時對應 Mesh 橘色發光警示</li>
+          <li>11 個可互動零件群組（鏡組、載台、冷卻…）</li>
+        </ul>
+      </div>
+
+      <div class="ui-card">
+        <div class="ui-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+        </div>
+        <div class="ui-title">虛擬控制面板</div>
+        <div class="ui-sub">HMI 感測器即時顯示</div>
+        <ul class="ui-list">
+          <li>590 個感測器讀值（SECOM 驅動）</li>
+          <li>Dose / Focus / LensTemp / CDU 3σ / Overlay</li>
+          <li>CDU Map 2D 晶圓空間分布圖</li>
+          <li>CD 趨勢圖（含 ±3σ 控制線）</li>
+          <li>Overlay 向量場可視化</li>
+          <li>故障觸發時自動顯示紅色警報欄</li>
+        </ul>
+        <div class="api-pill">GET /api/hmi → JSON 感測器快照</div>
+      </div>
+
+      <div class="ui-card">
+        <div class="ui-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <div class="ui-title">AI 對話 &amp; 操作評估面板</div>
+        <div class="ui-sub">按 [C] 開啟 / 按 [E] 互動</div>
+        <ul class="ui-list">
+          <li>[C] 鍵開啟 AI Chat 對話框，即時蘇格拉底問答</li>
+          <li>靠近零件按 [E]：出現「🔍 檢查」「⚙ 操作」按鈕</li>
+          <li>學員自行判斷操作，系統即時評估對錯</li>
+          <li>右上角即時分數顯示（滿分 100）</li>
+          <li>「求助學長」按鈕（扣 10 分）→ 差異化提示</li>
+        </ul>
+        <div class="api-pill">POST /api/action → SOP 比對 → 即時回饋</div>
+      </div>
+
+    </div>
+  </div>
+  <div class="slide-num">03</div>
+  <div class="bot-bar"></div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     SLIDE 4: AI MENTOR SYSTEM
+════════════════════════════════════════════ -->
+<section id="s4" data-label="AI Mentor System">
+  <div class="top-bar"></div>
+  <div class="inner">
+    <div style="display:flex;align-items:center;gap:20px;">
+      <div class="section-tag" style="background:var(--purple-bg);color:var(--purple);border-color:var(--purple-l);">Layer 3 · AI Mentor System</div>
+      <div class="slide-title">Qwen LLM 本地端推理 ·&nbsp;<em>三子系統協同</em></div>
+    </div>
+    <div class="ai-grid">
+
+      <!-- AI Mentor -->
+      <div class="ai-card mentor">
+        <div class="ai-head">
+          <div class="ai-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/>
+            </svg>
+          </div>
+          <div>
+            <div class="ai-name">AI Mentor</div>
+            <div class="ai-tech">AIScenarioMentor · ProactiveMentor</div>
+          </div>
+        </div>
+        <div class="ai-items">
+          <div class="ai-item">
+            <div class="ai-item-title">蘇格拉底式對話引導</div>
+            <div class="ai-item-desc">不直接給答案，用追問引導學員主動推理；依場景脈絡生成差異化問題</div>
+          </div>
+          <div class="ai-item">
+            <div class="ai-item-title">主動故障告警生成</div>
+            <div class="ai-item-desc">故障注入後主動觸發情境化問題，5 種故障 × 3 個隨機變體，避免背答案</div>
+          </div>
+          <div class="ai-item">
+            <div class="ai-item-title">雙層語義評估</div>
+            <div class="ai-item-desc">同義詞關鍵字群組（容許「偏移/shift/歪掉」）+ LLM 語義評估（+5/+2/−3）</div>
+          </div>
+        </div>
+        <div class="llm-tag">本地端 Qwen LLM（Ollama）<br>完全不連網 · 符合晶圓廠資安</div>
+      </div>
+
+      <!-- Agent -->
+      <div class="ai-card agent">
+        <div class="ai-head">
+          <div class="ai-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </div>
+          <div>
+            <div class="ai-name">Diagnostic / Operation Agent</div>
+            <div class="ai-tech">A2ACoordinator 協調</div>
+          </div>
+        </div>
+        <div class="ai-items">
+          <div class="ai-item">
+            <div class="ai-item-title">故障根因分析（Diagnostic Agent）</div>
+            <div class="ai-item-desc">根據感測器異常值推斷故障類型，結合 SECOM health_score 輔助診斷</div>
+          </div>
+          <div class="ai-item">
+            <div class="ai-item-title">SOP 操作管理（Operation Agent）</div>
+            <div class="ai-item-desc">維護 sop_definitions.py 中 5 種故障的有序步驟序列，逐步比對學員操作</div>
+          </div>
+          <div class="ai-item">
+            <div class="ai-item-title">錯誤分類回饋</div>
+            <div class="ai-item-desc">partial_action / partial_component / full_wrong 三級分類，對應不同扣分與提示</div>
+          </div>
+          <div class="ai-item">
+            <div class="ai-item-title">Safety Agent</div>
+            <div class="ai-item-desc">PPE 穿戴合規提醒，佔評分 30%</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Adaptive -->
+      <div class="ai-card adapt">
+        <div class="ai-head">
+          <div class="ai-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/>
+            </svg>
+          </div>
+          <div>
+            <div class="ai-name">自適應四模式評分</div>
+            <div class="ai-tech">ActionSession · 起始 100 分</div>
+          </div>
+        </div>
+        <div class="mode-row">
+          <div class="mode-item">
+            <div class="mode-badge m-c">挑戰</div>
+            <div class="mode-range">&gt; 85 分</div>
+            <div class="mode-desc">不給提示，引導自行分析</div>
+          </div>
+          <div class="mode-item">
+            <div class="mode-badge m-s">標準</div>
+            <div class="mode-range">64–85 分</div>
+            <div class="mode-desc">指出讀值偏差與應前往部件</div>
+          </div>
+          <div class="mode-item">
+            <div class="mode-badge m-sc">鷹架</div>
+            <div class="mode-range">40–63 分</div>
+            <div class="mode-desc">給部件名稱 + 操作方向</div>
+          </div>
+          <div class="mode-item">
+            <div class="mode-badge m-r">補救</div>
+            <div class="mode-range">&lt; 40 分</div>
+            <div class="mode-desc">完整步驟：部件、動作、原因</div>
+          </div>
+        </div>
+        <div class="ai-item" style="margin-top:8px;">
+          <div class="ai-item-title">求助學長</div>
+          <div class="ai-item-desc">扣 10 分後，依當前分數給差異化方向提示（hint_component + hint_action）</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <div class="slide-num">04</div>
+  <div class="bot-bar"></div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     SLIDE 5: TRAINING FLOW
+════════════════════════════════════════════ -->
+<section id="s5" data-label="訓練流程">
+  <div class="top-bar"></div>
+  <div class="inner">
+    <div style="display:flex;align-items:center;gap:20px;">
+      <div class="section-tag" style="background:var(--orange-bg);color:var(--orange);border-color:var(--orange-l);">Layer 4 · Training Flow</div>
+      <div class="slide-title">整合式訓練設計 —&nbsp;<em>理論與實機同步進行</em></div>
+    </div>
+    <div class="flow-layout">
+
+      <!-- Theory -->
+      <div class="flow-col">
+        <div class="flow-card fc-theory">
+          <div class="flow-header h-theory" style="border-radius:12px;">理論學習</div>
+          <div class="fc-items">
+            <div class="fc-item">DUV 微影原理（Rayleigh、Bossung Curve、DOF）</div>
+            <div class="fc-item">製程參數關聯：Dose / Focus / NA / CDU</div>
+            <div class="fc-item">物理模型：鏡片熱方程式（雙指數）、Overlay 誤差來源</div>
+            <div class="fc-item">AI 蘇格拉底式問答鞏固——<strong>不直接說答案</strong>，用追問引導</div>
+            <div class="fc-item">知識點追蹤（KnowledgeTracker）：thermal / vacuum / optical 六類</div>
+          </div>
+        </div>
+        <div class="bridge">
+          <div class="bridge-title">整合式設計：無分離測驗門檻</div>
+          <div class="bridge-body">AI 導師根據學員輸入內容，動態切換「理論引導」或「實作指引」，兩種模式在同一對話框無縫交替</div>
+        </div>
+      </div>
+
+      <!-- Arrow -->
+      <div class="arrow-col">⇄</div>
+
+      <!-- Practice -->
+      <div class="flow-col">
+        <div class="flow-card fc-prac">
+          <div class="flow-header h-prac" style="border-radius:12px;">實機操作（自主評估）</div>
+          <div class="fc-items">
+            <div class="fc-item">5 種故障情境：鏡片熱點 / 光罩污染 / 載台誤差 / Dose 漂移 / Focus 漂移</div>
+            <div class="fc-item">學員<strong>自行判斷</strong>靠近哪個零件、選擇何種操作（非逐步指引）</div>
+            <div class="fc-item">POST /api/action → sop_definitions.py 比對 → 即時回饋</div>
+            <div class="fc-item">連續答對 ≥ 3 次 → 升難度；連續答錯 ≥ 3 次 → 降難度</div>
+            <div class="fc-item">感測器 HMI 即時反映故障狀態（SECOM 驅動 + 物理模型）</div>
+          </div>
+        </div>
+        <div class="bridge" style="border-color:var(--blue-l);">
+          <div class="bridge-title" style="color:var(--blue);">5 種 SOP，各 4–5 個有序步驟</div>
+          <div class="bridge-body">錯誤依三級分類扣分（2–15 分），求助扣 10 分，全程 100 分制動態計分</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <div class="slide-num">05</div>
+  <div class="bot-bar"></div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     SLIDE 6: EVALUATION
+════════════════════════════════════════════ -->
+<section id="s6" data-label="評分與問卷系統">
+  <div class="top-bar"></div>
+  <div class="inner">
+    <div style="display:flex;align-items:center;gap:20px;">
+      <div class="section-tag" style="background:var(--teal-bg);color:var(--teal);border-color:var(--teal);">Layer 5 · Evaluation</div>
+      <div class="slide-title">評分與問卷系統 —&nbsp;<em>量化能力驗證</em></div>
+    </div>
+    <div class="eval-grid">
+
+      <!-- Ops scoring -->
+      <div class="eval-card ops">
+        <div class="eval-head">
+          <div class="eval-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+            </svg>
+          </div>
+          <div class="eval-name">操作正確性評分</div>
+        </div>
+        <div class="eval-items">
+          <div class="eval-item">
+            <div class="ei-title">故障類型判斷（Diagnostic）</div>
+            <div class="ei-desc">依感測器讀值正確辨識故障類型（lens_hotspot / contamination…）</div>
+          </div>
+          <div class="eval-item">
+            <div class="ei-title">SOP 操作順序（Operation）</div>
+            <div class="ei-desc">按照 sop_definitions.py 有序步驟執行；zero-skip 為全錯，部分匹配依類型扣 2–15 分</div>
+          </div>
+          <div class="eval-item">
+            <div class="ei-title">理論回答正確性</div>
+            <div class="ei-desc">雙層評估：同義詞群組關鍵字 +7/+3 分；LLM 語義分析 +5/+2/−3 分</div>
+          </div>
+          <div class="eval-item">
+            <div class="ei-title">安全合規（Safety）</div>
+            <div class="ei-desc">PPE 穿戴 / 鎖定程序 / 操作規範遵守，Safety Agent 即時稽核</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quiz -->
+      <div class="eval-card quiz">
+        <div class="eval-head">
+          <div class="eval-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <div class="eval-name">問卷前後測</div>
+        </div>
+        <div class="eval-items">
+          <div class="eval-item">
+            <div class="ei-title">受試者分組</div>
+            <div class="group-pills">
+              <span class="gp gp-a">無半導體背景</span>
+              <span class="gp gp-b">工程師 0–5 年</span>
+              <span class="gp gp-c">資深工程師 5 年+</span>
+            </div>
+          </div>
+          <div class="eval-item">
+            <div class="ei-title">測試流程</div>
+            <div class="ei-desc">前測 → 系統操作訓練（20–30 分鐘）→ 後測<br>概念理解問卷，滿分 15 分</div>
+          </div>
+          <div class="eval-item">
+            <div class="ei-title">最高成效族群</div>
+            <div class="ei-desc">0–5 年新進工程師：前測 11.67 → 後測 13.33，進步 <strong>11.13%</strong><br>具基礎但尚未熟練者受益最大</div>
+          </div>
+        </div>
+        <div class="result-box">
+          <div class="result-num">+7.27%</div>
+          <div class="result-detail">整體平均進步幅度<br>前測 10.45 分 → 後測 11.55 分<br>平均進步 +1.09 分（滿分 15）</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <div class="slide-num">06</div>
+  <div class="bot-bar"></div>
+</section>
+
+</deck-stage>
+
+</body></html>
